@@ -1,2 +1,2 @@
-# Haihv.Api.Identity.Ldap
-Dịch vụ Web Api Xác thực người dùng Ldap ADDC 
+# Haihv.Identities
+Các dịch vụ xác thực
