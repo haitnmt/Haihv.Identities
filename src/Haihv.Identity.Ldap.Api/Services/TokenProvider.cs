@@ -23,9 +23,10 @@ public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
         var claims = new List<Claim>
         {
             new (JwtRegisteredClaimNames.Jti, tokenId),
-            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Sub, user.UserPrincipalName),
+            new (JwtRegisteredClaimNames.Name, user.UserPrincipalName),
             new (JwtRegisteredClaimNames.Email, user.Email),
-            new (JwtRegisteredClaimNames.UniqueName, user.UserPrincipalName),
+            new (JwtRegisteredClaimNames.UniqueName, user.Id.ToString()),
             new (JwtRegisteredClaimNames.GivenName, user.DisplayName),
             new (JwtRegisteredClaimNames.Typ, "Ldap"),
         };
@@ -49,7 +50,6 @@ public sealed class JwtTokenOptions
     public string Issuer { get; set; } = string.Empty;
     public string Audience { get; set; } = string.Empty;
     public int ExpiryMinutes { get; set; } = 10;
-    
     public int ExpireRefreshTokenDays { get; set; } = 7;
 }
 
