@@ -10,8 +10,8 @@ WORKDIR /src
 COPY ["Haihv.Identity.Ldap.Api/Haihv.Identity.Ldap.Api.csproj", "Haihv.Identity.Ldap.Api/"]
 RUN dotnet restore "./Haihv.Identity.Ldap.Api/Haihv.Identity.Ldap.Api.csproj"
 COPY . .
-WORKDIR "/src/Haihv.Identity.Ldap.Api.Api"
-RUN dotnet build "Haihv.Identity.Ldap.Api.csproj" -c $BUILD_CONFIGURATION -o /app/build
+WORKDIR "/src/Haihv.Identity.Ldap.Api"
+RUN dotnet build "./Haihv.Identity.Ldap.Api.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release

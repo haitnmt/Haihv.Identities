@@ -7,6 +7,7 @@ using Haihv.Identity.Ldap.Api.Models;
 using Haihv.Identity.Ldap.Api.Services;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using ILogger = Serilog.ILogger;
 using LoginRequest = Haihv.Identity.Ldap.Api.Models.LoginRequest;
 
@@ -20,12 +21,13 @@ public static class LoginEndpoints
         app.MapPost("/login", Login);
     }
 
-    private record LoginResponse(string AccessToken, Guid ClientId, string RefreshToken);
+    private record LoginResponse(string Token, Guid TokenId, string RefreshToken, DateTime Expiry);
     private static async Task<IResult> Login([FromBody] LoginRequest request,
         ILogger logger,
         IAuthenticateLdapService authenticateLdapService,
         TokenProvider tokenProvider,
         IRefreshTokensService refreshTokensService,
+        IOptions<JwtTokenOptions> options,
         HttpContext httpContext)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
@@ -39,8 +41,9 @@ public static class LoginEndpoints
         return await result.Match<Task<IResult>>(async userLdap =>  
             {
                 var accessToken = tokenProvider.GenerateToken(userLdap);
-                var clientId = Guid.CreateVersion7();
-                var resultRefreshToken = await refreshTokensService.VerifyOrCreateAsync(clientId);
+                var tokenId = Guid.CreateVersion7();
+                var resultRefreshToken = await refreshTokensService.VerifyOrCreateAsync(tokenId);
+                var expiry = DateTime.UtcNow.AddMinutes(options.Value.ExpiryMinutes);
                 return resultRefreshToken.Match<IResult>(
                     refreshToken =>
                     {
@@ -57,7 +60,7 @@ public static class LoginEndpoints
                                 httpContext.GetLogInfo(request.Username), elapsed);
                         }
                         return Results.Ok(
-                            new Response<LoginResponse>(new LoginResponse(accessToken, clientId, refreshToken.Token)));
+                            new Response<LoginResponse>(new LoginResponse(accessToken, tokenId, refreshToken.Token, expiry)));
                     },
                     ex => Results.BadRequest(new Response<LoginResponse>(GetExceptionMessage(ex)))
                 );
