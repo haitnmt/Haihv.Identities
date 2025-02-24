@@ -9,6 +9,8 @@ namespace Haihv.Identity.Ldap.Api.Services;
 public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
 {
     private readonly LdapConnectionInfo _ldapConnectionInfo = ldapContext.LdapConnectionInfo;
+    private readonly string _domain = $"{ldapContext.LdapConnectionInfo.Domain}\\";
+    private readonly string _fullDomain = $"@{ldapContext.LdapConnectionInfo.DomainFullname}";
     
     private readonly AttributeTypeLdap[] _attributesToReturns =
     [
@@ -34,20 +36,22 @@ public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
     /// <summary>
     /// Lấy thông tin người dùng từ LDAP.
     /// </summary>
-    /// <param name="userPrincipalName">Tên người dùng cần lấy thông tin.</param>
+    /// <param name="username">Tên người dùng cần lấy thông tin.</param>
     /// <param name="whenChanged"></param>
     /// <returns>Đối tượng UserLdap chứa thông tin người dùng.</returns>
-    public async Task<UserLdap?> GetByPrincipalNameAsync(string userPrincipalName, DateTime whenChanged = default)
+    public async Task<UserLdap?> GetByPrincipalNameAsync(string username, DateTime whenChanged = default)
     {
+        if (username.StartsWith(_domain, StringComparison.OrdinalIgnoreCase))
+        {
+            username = $"{username.Replace(_domain, "")}{_fullDomain}";
+        }
         AttributeWithValueCollectionLdap filterCollection = new();
-        filterCollection.Add(AttributeTypeLdap.UserPrincipalName, [userPrincipalName]);
-        // Thêm điều kiện lọc theo ngày thay đổi cuối cùng của nhóm
-        if (whenChanged != default && whenChanged != DateTime.MinValue)
-            filterCollection.Add(AttributeTypeLdap.WhenChanged,
-                [whenChanged.ToString("yyyyMMddHHmmss.0Z")], OperatorLdap.GreaterThanOrEqual);
+        filterCollection.Add(AttributeTypeLdap.UserPrincipalName, [username]);
+        filterCollection.Add(AttributeTypeLdap.Mail, [username]);
+        filterCollection.Add(AttributeTypeLdap.SamAccountName, [username]);
         
         var resultLdap = new ResultEntryCollectionLdap(ldapContext);
-        var resultEntries = await resultLdap.GetAsync(filterCollection, _attributesToReturns);
+        var resultEntries = await resultLdap.GetAsync(filterCollection, _attributesToReturns, false);
         if (resultEntries is null || resultEntries.Count <= 0) return null;
         return UserLdapFromSearchResultEntryCollection(resultEntries)[0];
     }

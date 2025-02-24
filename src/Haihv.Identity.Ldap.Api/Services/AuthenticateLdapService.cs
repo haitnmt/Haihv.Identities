@@ -13,7 +13,7 @@ namespace Haihv.Identity.Ldap.Api.Services;
 /// </summary>
 public interface IAuthenticateLdapService
 {
-    Task<Result<UserLdap>> Authenticate(string userPrincipalName, string password);
+    Task<Result<UserLdap>> Authenticate(string username, string password);
 }
 
 /// <summary>
@@ -23,29 +23,33 @@ public interface IAuthenticateLdapService
 public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapContext, IFusionCache fusionCache) : IAuthenticateLdapService
 {
     private const string Key = "UserLdap:";
-    private static string CacheKey(string userPrincipalName, string password)
-        => Key + string.Join("-", userPrincipalName, password).ComputeHash();
+    private static string CacheKey(string username, string password)
+        => Key + string.Join("-", username, password).ComputeHash();
+
+    private static string UserNotFoundKey(string username)
+        => $"{Key}NotFound:{username}";
     private readonly TimeSpan _expiration = TimeSpan.FromMinutes(15);
 
     private readonly UserLdapService _userLdapService = new (ldapContext);
     /// <summary>
     /// Xác thực người dùng với tên đăng nhập và mật khẩu.
     /// </summary>
-    /// <param name="userPrincipalName">
+    /// <param name="username">
     /// Tên người dùng (tên đăng nhập) của người dùng.
     /// </param>
     /// <param name="password">Mật khẩu của người dùng.</param>
     /// <returns>Kết quả xác thực người dùng LDAP.</returns>
-    public async Task<Result<UserLdap>> Authenticate(string userPrincipalName, string password)
+    public async Task<Result<UserLdap>> Authenticate(string username, string password)
     {
-        var cacheKey = CacheKey(userPrincipalName, password);
+        username = username.Trim().ToLower();
+        var cacheKey = CacheKey(username, password);
         try
         {
             if (cacheKey == Key)
             {
-                return AuthenticateInLdap(userPrincipalName, password);
+                return await AuthenticateInLdap(username, password);
             }
-            return await fusionCache.GetOrSetAsync(cacheKey, AuthenticateInLdap(userPrincipalName, password), _expiration);
+            return await fusionCache.GetOrSetAsync(cacheKey, await AuthenticateInLdap(username, password), _expiration);
         }
         catch (Exception e)
         {
@@ -57,18 +61,24 @@ public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapCon
     /// <summary>
     /// Xác thực người dùng với tên đăng nhập và mật khẩu.
     /// </summary>
-    /// <param name="userPrincipalName">
+    /// <param name="username">
     /// Tên người dùng (tên đăng nhập) của người dùng.
     /// </param>
     /// <param name="password">Mật khẩu của người dùng.</param>
     /// <returns>
     /// Kết quả xác thực người dùng LDAP.
     /// </returns>
-    private UserLdap AuthenticateInLdap(string userPrincipalName, string password)
+    private async Task<UserLdap> AuthenticateInLdap(string username, string password)
     {
-        if (string.IsNullOrWhiteSpace(userPrincipalName) || string.IsNullOrWhiteSpace(password))
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
             throw new Exception("Tài khoản hoặc mật khẩu trống");
+        }
+        if (await fusionCache.GetOrDefaultAsync<bool?>(UserNotFoundKey(username))?? false)
+        {
+            var messenger = $"Người dùng không tồn tại [{username}]";
+            logger.Warning(messenger);
+            throw new Exception(messenger);
         }
         var ldapConnectionInfo = ldapContext.LdapConnectionInfo;
         if (string.IsNullOrWhiteSpace(ldapConnectionInfo.Host) ||
@@ -78,19 +88,19 @@ public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapCon
             logger.Error("Cấu hình Ldap không hợp lệ {LdapConnectionInfo}", ldapConnectionInfo);
             throw new Exception("Cấu hình Ldap không hợp lệ");
         }
-
         try
         {
-            var userLdap = _userLdapService.GetByPrincipalNameAsync(userPrincipalName).Result;
+            var userLdap = _userLdapService.GetByPrincipalNameAsync(username).Result;
             if (userLdap is null)
             {
-                var messenger = $"Người dùng không tồn tại [{userPrincipalName}]";
+                _ = fusionCache.SetAsync(UserNotFoundKey(username), true, TimeSpan.FromSeconds(30)).AsTask();
+                var messenger = $"Người dùng không tồn tại [{username}]";
                 logger.Warning(messenger);
                 throw new Exception(messenger);
             }
             // Thực hiện xác thực
             ldapContext.Connection.Bind(
-                new System.Net.NetworkCredential(userPrincipalName, password)
+                new System.Net.NetworkCredential(userLdap.UserPrincipalName, password)
             );
             return userLdap;
         }

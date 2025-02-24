@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.DirectoryServices.Protocols;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Haihv.Identity.Ldap.Api.Interfaces;
@@ -20,13 +19,13 @@ public static class LoginEndpoints
         
         app.MapPost("/login", Login);
     }
-
     private record LoginResponse(string Token, Guid TokenId, string RefreshToken, DateTime Expiry);
     private static async Task<IResult> Login([FromBody] LoginRequest request,
         ILogger logger,
         IAuthenticateLdapService authenticateLdapService,
         TokenProvider tokenProvider,
         IRefreshTokensService refreshTokensService,
+        ICheckIpService checkIpService,
         IOptions<JwtTokenOptions> options,
         HttpContext httpContext)
     {
@@ -34,7 +33,13 @@ public static class LoginEndpoints
         {
             return Results.BadRequest(new Response<LoginResponse>("Tên đăng nhập và mật khẩu không được để trống!"));
         }
-        var user = new User(request.Username, request.Password);
+        var ipAddr = httpContext.GetIpAddress();
+        var (count, exprSecond)  = await checkIpService.CheckLockAsync(ipAddr);
+        if (exprSecond > 0)
+        {
+            return Results.BadRequest(new Response<LoginResponse>($"Bạn đã đăng nhập sai quá nhiều, thử lại sau {exprSecond} giây!"));
+        }
+        const string errorMessage = "Thông tin đăng nhập không chính xác!";
         var sw = Stopwatch.StartNew();
         // Xác thực trong cơ sở dữ liệu trước:
         var result = await authenticateLdapService.Authenticate(request.Username, request.Password);
@@ -47,6 +52,7 @@ public static class LoginEndpoints
                 return resultRefreshToken.Match<IResult>(
                     refreshToken =>
                     {
+                        checkIpService.ClearLockAsync(ipAddr);
                         sw.Stop();
                         var elapsed = sw.ElapsedMilliseconds;
                         if (elapsed > 1000)
@@ -62,34 +68,20 @@ public static class LoginEndpoints
                         return Results.Ok(
                             new Response<LoginResponse>(new LoginResponse(accessToken, tokenId, refreshToken.Token, expiry)));
                     },
-                    ex => Results.BadRequest(new Response<LoginResponse>(GetExceptionMessage(ex)))
+                    _ => Results.BadRequest(new Response<LoginResponse>(errorMessage))
                 );
             },
             ex =>
             {
+                checkIpService.SetLockAsync(ipAddr);
                 sw.Stop();
                 var elapsed = sw.ElapsedMilliseconds;
-                logger.Error(ex, "Đăng nhập thất bại: {Info} [{Elapsed} ms]",
-                    httpContext.GetLogInfo(request.Username), elapsed);
-                return Task.FromResult(Results.BadRequest(new Response<LoginResponse>(GetExceptionMessage(ex))));
+                logger.Error(ex, "Đăng nhập thất bại: {Info} [{Elapsed} ms] {Count}",
+                    httpContext.GetLogInfo(request.Username), elapsed, count);
+                return Task.FromResult(Results.BadRequest(new Response<LoginResponse>($"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}")));
             }
         );
-
-        string GetExceptionMessage(Exception ex)
-        {
-            return ex switch
-            {
-                LdapException ldapException =>
-                    ldapException.ErrorCode switch
-                    {
-                        49 => "Tên đăng nhập hoặc mật khẩu không chính xác!",
-                        _ => ex.Message
-                    },
-                _ => ex.Message
-            };
-        }
     }
-    
     
     private class LogInfo   
     {
@@ -110,7 +102,7 @@ public static class LoginEndpoints
     {
         return JsonSerializer.Serialize(new LogInfo
         {
-            ClientIp = httpContext.Connection.LocalIpAddress?.ToString() ?? string.Empty,
+            ClientIp = httpContext.GetIpAddress(),
             Username = username ?? httpContext.User.Identity?.Name ?? string.Empty,
             UserAgent = httpContext.Request.Headers.UserAgent.ToString(),
             Url = httpContext.Request.Path.Value ?? string.Empty,
@@ -118,5 +110,8 @@ public static class LoginEndpoints
             QueryString = httpContext.Request.QueryString.Value ?? string.Empty
         });
     }
-    
+    private static string GetIpAddress(this HttpContext httpContext)
+    {
+        return httpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+    }
 }
