@@ -1,9 +1,11 @@
+using System.Net;
 using System.Text;
 using Haihv.Identity.Ldap.Api.Endpoints;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Services;
 using LanguageExt.ClassInstances.Const;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 // Set Console Support Vietnamese
@@ -15,7 +17,6 @@ builder.Services.AddOpenApi();
 
 // Add Serilog
 builder.AddLogToElasticsearch();
-
 
 // Add Caching
 builder.AddFusionCache();

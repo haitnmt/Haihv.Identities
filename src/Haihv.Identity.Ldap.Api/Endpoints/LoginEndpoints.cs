@@ -110,8 +110,36 @@ public static class LoginEndpoints
             QueryString = httpContext.Request.QueryString.Value ?? string.Empty
         });
     }
+
     private static string GetIpAddress(this HttpContext httpContext)
     {
-        return httpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+        string? ipAddress = null;
+    
+        // Order headers by proxy chain priority (last proxy to first)
+        var headerKeys = new[]
+        {
+            "CF-Connecting-IP",   // Highest priority - Cloudflare original client IP
+            "True-Client-IP",     // Alternative Cloudflare header
+            "X-Original-For",     // HAProxy
+            "X-Forwarded-For",    // General proxy header (will contain chain of IPs)
+            "X-Real-IP",          // Nginx
+            "REMOTE_ADDR"         // Fallback
+        };
+
+        foreach (var headerKey in headerKeys)
+        {
+            if (!httpContext.Request.Headers.TryGetValue(headerKey, out var headerValue)) continue;
+            ipAddress = headerValue.FirstOrDefault()?.Split(',')[0].Trim();
+            if (!string.IsNullOrWhiteSpace(ipAddress))
+                break;
+        }
+
+        // Fallback to RemoteIpAddress if no proxy headers found
+        if (string.IsNullOrWhiteSpace(ipAddress) && httpContext.Connection.RemoteIpAddress != null)
+        {
+            ipAddress = httpContext.Connection.RemoteIpAddress.ToString();
+        }
+
+        return ipAddress ?? "Unknown";
     }
 }

@@ -23,11 +23,11 @@ public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
         var claims = new List<Claim>
         {
             new (JwtRegisteredClaimNames.Jti, tokenId),
-            new(JwtRegisteredClaimNames.Sub, user.UserPrincipalName),
-            new (JwtRegisteredClaimNames.Name, user.UserPrincipalName),
-            new (JwtRegisteredClaimNames.Email, user.Email),
+            new(JwtRegisteredClaimNames.Sub, user.UserPrincipalName ?? string.Empty),
+            new (JwtRegisteredClaimNames.Name, user.UserPrincipalName ?? string.Empty),
+            new (JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
             new (JwtRegisteredClaimNames.UniqueName, user.Id.ToString()),
-            new (JwtRegisteredClaimNames.GivenName, user.DisplayName),
+            new (JwtRegisteredClaimNames.GivenName, user.DisplayName ?? string.Empty),
             new (JwtRegisteredClaimNames.Typ, "Ldap"),
         };
         

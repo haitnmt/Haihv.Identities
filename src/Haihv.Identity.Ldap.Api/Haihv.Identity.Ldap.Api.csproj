@@ -6,8 +6,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
 		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 		<Copyright>vpdkbacninh.vn | haihv.vn</Copyright>
-		<AssemblyVersion>1.0.9186.3</AssemblyVersion>
-		<FileVersion>1.0.9186.3</FileVersion>
+		<AssemblyVersion>1.0.9188.4</AssemblyVersion>
+		<FileVersion>1.0.9188.4</FileVersion>
     </PropertyGroup>
 
     <ItemGroup>
