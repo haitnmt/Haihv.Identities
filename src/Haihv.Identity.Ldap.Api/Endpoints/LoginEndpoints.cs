@@ -43,6 +43,7 @@ public static class LoginEndpoints
         var sw = Stopwatch.StartNew();
         // Xác thực trong cơ sở dữ liệu trước:
         var result = await authenticateLdapService.Authenticate(request.Username, request.Password);
+        
         return await result.Match<Task<IResult>>(async userLdap =>  
             {
                 var accessToken = tokenProvider.GenerateToken(userLdap);
@@ -57,13 +58,17 @@ public static class LoginEndpoints
                         var elapsed = sw.ElapsedMilliseconds;
                         if (elapsed > 1000)
                         {
-                            logger.Warning("Đăng nhập thành công: {Info} [{Elapsed} ms]",
-                                httpContext.GetLogInfo(request.Username), elapsed);
+                            logger.Warning("Đăng nhập thành công: [{Elapsed} ms] {Username} {ClientIp}",
+                                elapsed,
+                                request.Username,
+                                ipAddr);
                         }
                         else
                         {
-                            logger.Information("Đăng nhập thành công: {Info} [{Elapsed} ms]",
-                                httpContext.GetLogInfo(request.Username), elapsed);
+                            logger.Information("Đăng nhập thành công: [{Elapsed} ms] {Username} {ClientIp}",
+                                elapsed,
+                                request.Username,
+                                ipAddr);
                         }
                         return Results.Ok(
                             new Response<LoginResponse>(new LoginResponse(accessToken, tokenId, refreshToken.Token, expiry)));
@@ -76,41 +81,15 @@ public static class LoginEndpoints
                 checkIpService.SetLockAsync(ipAddr);
                 sw.Stop();
                 var elapsed = sw.ElapsedMilliseconds;
-                logger.Error(ex, "Đăng nhập thất bại: {Info} [{Elapsed} ms] {Count}",
-                    httpContext.GetLogInfo(request.Username), elapsed, count);
+                logger.Error(ex, "Đăng nhập thất bại: [{Elapsed} ms] {Username} {ClientIp}",
+                    elapsed,
+                    request.Username,
+                    ipAddr);
                 return Task.FromResult(Results.BadRequest(new Response<LoginResponse>($"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}")));
             }
         );
     }
     
-    private class LogInfo   
-    {
-        [JsonPropertyName("clientIp")]
-        public string ClientIp { get; set; } = string.Empty;
-        [JsonPropertyName("username")]
-        public string Username { get; set; } = string.Empty;
-        [JsonPropertyName("userAgent")]
-        public string UserAgent { get; set; } = string.Empty;
-        [JsonPropertyName("url")]
-        public string Url { get; set; } = string.Empty;
-        [JsonPropertyName("hashBody")]
-        public string? HashBody { get; set; } = string.Empty;
-        [JsonPropertyName("queryString")]
-        public string? QueryString { get; set; } = string.Empty;
-    }
-    private static string GetLogInfo(this HttpContext httpContext, string? username = null)
-    {
-        return JsonSerializer.Serialize(new LogInfo
-        {
-            ClientIp = httpContext.GetIpAddress(),
-            Username = username ?? httpContext.User.Identity?.Name ?? string.Empty,
-            UserAgent = httpContext.Request.Headers.UserAgent.ToString(),
-            Url = httpContext.Request.Path.Value ?? string.Empty,
-            HashBody = httpContext.Request.Body.ToString().ComputeHash() ?? string.Empty,
-            QueryString = httpContext.Request.QueryString.Value ?? string.Empty
-        });
-    }
-
     private static string GetIpAddress(this HttpContext httpContext)
     {
         string? ipAddress = null;
