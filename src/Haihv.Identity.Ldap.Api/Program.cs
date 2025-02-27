@@ -66,7 +66,8 @@ app.UseHttpsRedirection();
 app.UseCors();
 
 app.MapLoginEndpoints();
-
+// Thêm Endpoint kiểm tra ứng dụng hoạt động
+app.MapGet("/health", () => Results.Ok("OK")).WithName("GetHealth");
 
 app.Run();
 
