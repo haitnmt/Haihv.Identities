@@ -3,8 +3,10 @@ using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Models;
 using Haihv.Identity.Ldap.Api.Services;
 using Haihv.Identity.Ldap.Api.Extensions;
+using LanguageExt;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using ZiggyCreatures.Caching.Fusion;
 using ILogger = Serilog.ILogger;
 using LoginRequest = Haihv.Identity.Ldap.Api.Models.LoginRequest;
 
@@ -22,10 +24,12 @@ public static class LoginEndpoints
     private static async Task<IResult> Login([FromBody] LoginRequest request,
         ILogger logger,
         IAuthenticateLdapService authenticateLdapService,
+        IGroupLdapService groupLdapService,
         TokenProvider tokenProvider,
         IRefreshTokensService refreshTokensService,
         ICheckIpService checkIpService,
         IOptions<JwtTokenOptions> options,
+        IFusionCache fusionCache,
         HttpContext httpContext)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
@@ -52,6 +56,9 @@ public static class LoginEndpoints
                 var tokenId = Guid.CreateVersion7();
                 var resultRefreshToken = await refreshTokensService.VerifyOrCreateAsync(tokenId);
                 var expiry = DateTime.UtcNow.AddMinutes(options.Value.ExpiryMinutes);
+                // Lưu Cache thông tin nhóm của người dùng
+                var key = UserEndpoints.GetCacheKey(userLdap.DistinguishedName);
+                _ = fusionCache.GetOrSetAsync(key, await groupLdapService.GetAllGroupNameByDnAsync(userLdap.DistinguishedName)).AsTask();
                 return resultRefreshToken.Match<IResult>(
                     refreshToken =>
                     {
@@ -73,7 +80,6 @@ public static class LoginEndpoints
                                 request.Username,
                                 ipInfo);
                         }
-
                         return Results.Ok(
                             new Response<LoginResponse>(new LoginResponse(accessToken, tokenId, refreshToken.Token,
                                 expiry)));

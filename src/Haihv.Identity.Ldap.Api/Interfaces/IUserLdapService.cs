@@ -20,5 +20,6 @@ public interface IUserLdapService
     /// </param>
     /// <param name="whenChanged"></param>
     /// <returns>Đối tượng UserLdap chứa thông tin người dùng.</returns>
-    Task<UserLdap?> GetByDistinctNameAsync(string distinguishedName, DateTime whenChanged = default);
+    Task<UserLdap?> GetByDistinguishedNameAsync(string distinguishedName, DateTime whenChanged = default);
+    
 }

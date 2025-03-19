@@ -25,6 +25,7 @@ public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
             new (JwtRegisteredClaimNames.Jti, tokenId),
             new(JwtRegisteredClaimNames.Sub, user.UserPrincipalName ?? string.Empty),
             new (JwtRegisteredClaimNames.Name, user.UserPrincipalName ?? string.Empty),
+            new (nameof(UserLdap.DistinguishedName), user.DistinguishedName),
             new (JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
             new (JwtRegisteredClaimNames.UniqueName, user.Id.ToString()),
             new (JwtRegisteredClaimNames.GivenName, user.DisplayName ?? string.Empty),
@@ -53,4 +54,30 @@ public sealed class JwtTokenOptions
     public int ExpireRefreshTokenDays { get; set; } = 7;
 }
 
+public static class JwtTokenOptionsExtensions
+{
+    public static void AddJwtTokenOptions(this IHostApplicationBuilder builder, string sectionName)
+    {
+        // Add Jwt
+        builder.Services.Configure<JwtTokenOptions>(builder.Configuration.GetSection(sectionName));
+    }
+    public static JwtTokenOptions GetJwtTokenOptions(this IConfiguration configuration, string sectionName)
+    {
+        var options = new JwtTokenOptions();
+        configuration.GetSection("JwtOptions").Bind(options);
+        return options;
+    }
+}
+
 public record User(string UserName, string Password);
+
+public static class ClaimExtensions
+{
+    private static string? GetClaimValue(this ClaimsPrincipal claimsPrincipal, string claimType)
+        => claimsPrincipal.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
+    
+    public static string? GetDistinguishedName(this ClaimsPrincipal claimsPrincipal)
+        => GetClaimValue(claimsPrincipal, nameof(UserLdap.DistinguishedName));
+    public static string GetUserPrincipalName(this ClaimsPrincipal claimsPrincipal)
+        => GetClaimValue(claimsPrincipal, nameof(UserLdap.UserPrincipalName)) ?? string.Empty;
+}

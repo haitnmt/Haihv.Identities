@@ -1,11 +1,10 @@
-using System.Net;
 using System.Text;
 using Haihv.Identity.Ldap.Api.Endpoints;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Services;
-using LanguageExt.ClassInstances.Const;
-using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 // Set Console Support Vietnamese
@@ -28,14 +27,34 @@ builder.Services.AddSingleton<IGroupLdapService,GroupLdapService>();
 builder.Services.AddSingleton<IAuthenticateLdapService,AuthenticateLdapService>();
 
 // Add Jwt
-builder.Services.Configure<JwtTokenOptions>(builder.Configuration.GetSection("JwtOptions"));
+const string jwtSectionName = "JwtOptions";
+builder.AddJwtTokenOptions(jwtSectionName);
 builder.Services.AddSingleton<TokenProvider>();
 builder.Services.AddSingleton<IRefreshTokensService, RefreshTokensService>();
 
 // Add service for Check IP
 builder.Services.AddSingleton<ICheckIpService, CheckIpService>();
 
+// Add service Authentication and Authorization for Identity Server
+builder.Services.AddAuthorizationBuilder();
 
+var jwtTokenOptions = builder.Configuration.GetJwtTokenOptions(jwtSectionName);
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtTokenOptions.SecretKey)),
+            ValidIssuer = jwtTokenOptions.Issuer,
+            ValidAudience = jwtTokenOptions.Audience,
+            ClockSkew = TimeSpan.Zero
+        };
+    });
 // Configure CORS
 var frontendUrls = builder.Configuration.GetSection("FrontendUrl").Get<string[]>();
 if (frontendUrls is null || frontendUrls.Length == 0)
@@ -66,8 +85,13 @@ app.UseHttpsRedirection();
 app.UseCors();
 
 app.MapLoginEndpoints();
+app.MapUserEndpoints();
 // Thêm Endpoint kiểm tra ứng dụng hoạt động
 app.MapGet("/health", () => Results.Ok("OK")).WithName("GetHealth");
+
+// Authentication and Authorization
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.Run();
 

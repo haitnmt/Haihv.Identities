@@ -64,7 +64,7 @@ public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
     /// </param>
     /// <param name="whenChanged"></param>
     /// <returns>Đối tượng UserLdap chứa thông tin người dùng.</returns>
-    public async Task<UserLdap?> GetByDistinctNameAsync(string distinguishedName, DateTime whenChanged = default)
+    public async Task<UserLdap?> GetByDistinguishedNameAsync(string distinguishedName, DateTime whenChanged = default)
     {
         AttributeWithValueCollectionLdap attributeWithValueCollection = new();
         attributeWithValueCollection.Add(AttributeTypeLdap.DistinguishedName, [distinguishedName]);
@@ -77,6 +77,7 @@ public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
         if (resultEntries is null || resultEntries.Count <= 0) return null;
         return UserLdapFromSearchResultEntryCollection(resultEntries)[0];
     }
+    
     /// <summary>
     /// Chuyển đổi một tập hợp các kết quả tìm kiếm LDAP thành danh sách các đối tượng UserLdap.
     /// </summary>
