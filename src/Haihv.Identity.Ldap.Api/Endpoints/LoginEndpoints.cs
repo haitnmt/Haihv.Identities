@@ -16,9 +16,9 @@ public static class LoginEndpoints
     public static void MapLoginEndpoints(this WebApplication app)
     {
         app.MapPost("/login", Login);
-        app.MapPost("/logout", Logout)
+        app.MapGet("/logout", Logout)
             .RequireAuthorization();
-        app.MapPost("/logoutAll", LogoutAll)
+        app.MapGet("/logoutAll", LogoutAll)
             .RequireAuthorization();
         app.MapGet("/verify", Verify)
             .RequireAuthorization();
