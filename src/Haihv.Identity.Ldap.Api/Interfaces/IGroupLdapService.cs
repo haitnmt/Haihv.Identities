@@ -18,4 +18,7 @@ public interface IGroupLdapService
     /// </returns>
     Task<List<string>> GetAllGroupNameByDnAsync(string distinguishedName, CancellationToken cancellationToken = default);
     
+    Task SetCacheAsync(UserLdap userLdap, CancellationToken cancellationToken = default);
+    string GetCacheKey(string dn);
+
 }

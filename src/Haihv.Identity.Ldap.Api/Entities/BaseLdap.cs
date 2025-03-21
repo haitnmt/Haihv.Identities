@@ -15,12 +15,12 @@ public abstract class BaseLdap : IBaseLdap
     /// <summary>
     /// Tên phân biệt của đối tượng.
     /// </summary>
-    public string DistinguishedName { get; init; } = string.Empty;
+    public string DistinguishedName { get; set; } = string.Empty;
 
     /// <summary>
     /// Tên tài khoản SAM của đối tượng.
     /// </summary>
-    public string? SamAccountName { get; init; }
+    public string SamAccountName { get; set; } = string.Empty;
 
     /// <summary>
     /// Tên chung của đối tượng.

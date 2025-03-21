@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Haihv.Identity.Ldap.Api.Entities;
 
 /// <summary>
@@ -18,7 +20,7 @@ public class UserLdap : BaseLdap
     /// <summary>
     /// Tên chính của người dùng.
     /// </summary>
-    public string? UserPrincipalName { get; init; }
+    public required string UserPrincipalName { get; init; }
 
     /// <summary>
     /// Chức danh công việc của người dùng.

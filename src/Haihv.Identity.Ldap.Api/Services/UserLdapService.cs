@@ -19,9 +19,7 @@ public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
         AttributeTypeLdap.DisplayName,
         AttributeTypeLdap.DistinguishedName,
         AttributeTypeLdap.SamAccountName,
-        AttributeTypeLdap.Cn,
         AttributeTypeLdap.Mail,
-        AttributeTypeLdap.MemberOf,
         AttributeTypeLdap.JobTitle,
         AttributeTypeLdap.Department,
         AttributeTypeLdap.Description,
@@ -41,19 +39,22 @@ public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
     /// <returns>Đối tượng UserLdap chứa thông tin người dùng.</returns>
     public async Task<UserLdap?> GetByPrincipalNameAsync(string username, DateTime whenChanged = default)
     {
-        if (username.StartsWith(_domain, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(username)) return null;
+        var userPrincipalName = username;
+        if (userPrincipalName.StartsWith(_domain, StringComparison.OrdinalIgnoreCase))
         {
-            username = $"{username.Replace(_domain, "")}{_fullDomain}";
+            userPrincipalName = $"{userPrincipalName.Replace(_domain, "")}{_fullDomain}";
         }
         AttributeWithValueCollectionLdap filterCollection = new();
-        filterCollection.Add(AttributeTypeLdap.UserPrincipalName, [username]);
-        filterCollection.Add(AttributeTypeLdap.Mail, [username]);
-        filterCollection.Add(AttributeTypeLdap.SamAccountName, [username]);
+        filterCollection.Add(AttributeTypeLdap.UserPrincipalName, [userPrincipalName]);
+        filterCollection.Add(AttributeTypeLdap.Mail, [userPrincipalName]);
+        filterCollection.Add(AttributeTypeLdap.SamAccountName, [userPrincipalName]);
         
         var resultLdap = new ResultEntryCollectionLdap(ldapContext);
         var resultEntries = await resultLdap.GetAsync(filterCollection, _attributesToReturns, false);
         if (resultEntries is null || resultEntries.Count <= 0) return null;
-        return UserLdapFromSearchResultEntryCollection(resultEntries)[0];
+        var userLdap = UserLdapFromSearchResultEntryCollection(resultEntries)[0];
+        return userLdap;
     }
     
     /// <summary>
@@ -121,42 +122,56 @@ public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
             {
                 Id = new Guid((byte[])entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.ObjectGuid)][0]),
                 DisplayName =
-                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.DisplayName)]?[0].ToString() ??
-                    entry.Attributes["cn"]?[0].ToString() ?? string.Empty,
+                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.DisplayName)]?[0]
+                        .ToString() ??
+                    entry.Attributes["cn"]?[0]
+                        .ToString() ??
+                    string.Empty,
                 UserPrincipalName =
-                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.UserPrincipalName)]?[0].ToString() ??
+                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.UserPrincipalName)]?[0]
+                        .ToString() ??
                     string.Empty,
                 DistinguishedName =
-                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.DistinguishedName)]?[0].ToString() ??
+                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.DistinguishedName)]?[0]
+                        .ToString() ??
                     string.Empty,
-                Email = entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.Mail)]?[0].ToString() ??
+                Email = entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.Mail)]?[0]
+                            .ToString() ??
                         string.Empty,
                 Department =
-                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.Department)]?[0].ToString() ??
+                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.Department)]?[0]
+                        .ToString() ??
                     string.Empty,
-                JobTitle = entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.JobTitle)]?[0].ToString() ??
+                JobTitle = entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.JobTitle)]?[0]
+                               .ToString() ??
                            string.Empty,
                 Description =
-                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.Description)]?[0].ToString() ??
+                    entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.Description)]?[0]
+                        .ToString() ??
                     string.Empty,
                 IsLocked = (int.TryParse(
                                 entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.UserAccountControl)]?[0]
-                                    .ToString(), out var userAccountControl)
-                            && Convert.ToBoolean(userAccountControl & 0x002))
-                           || (long.TryParse(
-                                   entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.LockoutTime)]?[0]
-                                       .ToString(), out var lockoutTime)
-                               && lockoutTime > intFileTimeUtc)
-                           || (long.TryParse(
-                                   entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.AccountExpires)]?[0]
-                                       .ToString(), out var accountExpires)
-                               && accountExpires > 0 && accountExpires < intFileTimeUtc),
+                                    .ToString(),
+                                out var userAccountControl) &&
+                            Convert.ToBoolean(userAccountControl & 0x002)) ||
+                           (long.TryParse(
+                                entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.LockoutTime)]?[0]
+                                    .ToString(),
+                                out var lockoutTime) &&
+                            lockoutTime > intFileTimeUtc) ||
+                           (long.TryParse(
+                                entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.AccountExpires)]?[0]
+                                    .ToString(),
+                                out var accountExpires) &&
+                            accountExpires > 0 &&
+                            accountExpires < intFileTimeUtc),
                 PwdLastSet = pwdLastSet,
                 IsPwdMustChange = pwdLastSetRaw == 0,
-                MemberOf = entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.MemberOf)]?.GetValues(typeof(string)).Cast<string>().ToHashSet()?? [],
                 Organization = _ldapConnectionInfo.Organizational,
+                SamAccountName = entry.Attributes[AttributeLdap.GetAttribute(AttributeTypeLdap.SamAccountName)]?[0]
+                                     .ToString() ?? string.Empty,
                 WhenCreated = whenCreated,
-                WhenChanged = whenChanged
+                WhenChanged = whenChanged,
             };
             result.Add(detailUser);
             if (!isGetAll) break;

@@ -5,5 +5,5 @@ namespace Haihv.Identity.Ldap.Api.Interfaces;
 
 public interface IRefreshTokensService
 {
-    Task<Result<RefreshToken>> VerifyOrCreateAsync(Guid clientId, string? token = null, CancellationToken cancellationToken = default);
+    Task<Result<RefreshToken>> VerifyOrCreateAsync(Guid clientId, string samAccountName,  string? token = null, CancellationToken cancellationToken = default);
 }

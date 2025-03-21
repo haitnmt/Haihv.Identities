@@ -10,7 +10,7 @@ namespace Haihv.Identity.Ldap.Api.Services;
 public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
 {
     private readonly JwtTokenOptions _options = options.Value;
-    public string GenerateToken(UserLdap user)
+    public string GenerateToken(UserLdap user, string? username = null)
     {
         var tokenId = Guid.CreateVersion7().ToString();
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SecretKey))
@@ -23,8 +23,10 @@ public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
         var claims = new List<Claim>
         {
             new (JwtRegisteredClaimNames.Jti, tokenId),
-            new(JwtRegisteredClaimNames.Sub, user.UserPrincipalName ?? string.Empty),
-            new (JwtRegisteredClaimNames.Name, user.UserPrincipalName ?? string.Empty),
+            new(JwtRegisteredClaimNames.Sub, username ?? user.SamAccountName),
+            new (JwtRegisteredClaimNames.Name, user.DisplayName ?? string.Empty),
+            new (nameof(user.UserPrincipalName), user.UserPrincipalName),
+            new (nameof(user.SamAccountName), user.SamAccountName),
             new (nameof(UserLdap.DistinguishedName), user.DistinguishedName),
             new (JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
             new (JwtRegisteredClaimNames.UniqueName, user.Id.ToString()),
@@ -73,11 +75,20 @@ public record User(string UserName, string Password);
 
 public static class ClaimExtensions
 {
-    private static string? GetClaimValue(this ClaimsPrincipal claimsPrincipal, string claimType)
-        => claimsPrincipal.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
+    private static string? GetClaimValue(this HttpContext context, string claimType)
+        => context.User.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
     
-    public static string? GetDistinguishedName(this ClaimsPrincipal claimsPrincipal)
-        => GetClaimValue(claimsPrincipal, nameof(UserLdap.DistinguishedName));
-    public static string GetUserPrincipalName(this ClaimsPrincipal claimsPrincipal)
-        => GetClaimValue(claimsPrincipal, nameof(UserLdap.UserPrincipalName)) ?? string.Empty;
+    public static string? GetDistinguishedName(this HttpContext context)
+        => GetClaimValue(context, nameof(UserLdap.DistinguishedName));
+    public static string GetUserPrincipalName(this HttpContext context)
+        => GetClaimValue(context, nameof(UserLdap.UserPrincipalName)) ?? string.Empty;
+    
+    public static string GetSamAccountName(this HttpContext context) 
+        => GetClaimValue(context, nameof(UserLdap.SamAccountName)) ?? string.Empty;
+    public static string GetUsername(this HttpContext context)
+        => GetClaimValue(context, JwtRegisteredClaimNames.Sub) ?? string.Empty;
+
+    public static long GetExpiry(this HttpContext context)
+        => long.TryParse(context.GetClaimValue(JwtRegisteredClaimNames.Exp), out var exp) ? exp : 0;
+    
 }

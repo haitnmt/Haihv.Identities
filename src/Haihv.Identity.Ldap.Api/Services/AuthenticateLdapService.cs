@@ -1,4 +1,5 @@
 using System.DirectoryServices.Protocols;
+using Haihv.Identity.Ldap.Api.Endpoints;
 using Haihv.Identity.Ldap.Api.Entities;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Extensions;
@@ -20,7 +21,11 @@ public interface IAuthenticateLdapService
 /// Dịch vụ xác thực người dùng thông qua LDAP.
 /// </summary>
 /// <param name="ldapContext">Ngữ cảnh LDAP.</param>
-public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapContext, IFusionCache fusionCache) : IAuthenticateLdapService
+public sealed class AuthenticateLdapService(ILogger logger, 
+    IFusionCache fusionCache,
+    ILdapContext ldapContext,
+    IGroupLdapService groupLdapService
+    ) : IAuthenticateLdapService
 {
     private const string Key = "UserLdap:";
     private static string CacheKey(string username, string password)
@@ -41,15 +46,24 @@ public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapCon
     /// <returns>Kết quả xác thực người dùng LDAP.</returns>
     public async Task<Result<UserLdap>> Authenticate(string username, string password)
     {
-        username = username.Trim().ToLower();
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            throw new Exception("Tài khoản hoặc mật khẩu trống");
+        }
         var cacheKey = CacheKey(username, password);
         try
         {
-            if (cacheKey == Key)
+            var userLdap = await fusionCache.GetOrDefaultAsync<UserLdap>(cacheKey);
+            if (userLdap is not null)
             {
-                return await AuthenticateInLdap(username, password);
+                return userLdap;
             }
-            return await fusionCache.GetOrSetAsync(cacheKey, await AuthenticateInLdap(username, password), _expiration);
+            // Thực hiện xác thực
+            userLdap = await AuthenticateInLdap(username, password);
+            _ = fusionCache.SetAsync(cacheKey, userLdap, _expiration, tags:[userLdap.SamAccountName]).AsTask();
+            // Lưu Cache thông tin nhóm của người dùng
+            _ = groupLdapService.SetCacheAsync(userLdap);
+            return userLdap;
         }
         catch (Exception e)
         {
@@ -65,16 +79,17 @@ public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapCon
     /// Tên người dùng (tên đăng nhập) của người dùng.
     /// </param>
     /// <param name="password">Mật khẩu của người dùng.</param>
+    /// <param name="cancellationToken">Token hủy bỏ.</param>
     /// <returns>
     /// Kết quả xác thực người dùng LDAP.
     /// </returns>
-    private async Task<UserLdap> AuthenticateInLdap(string username, string password)
+    private async Task<UserLdap> AuthenticateInLdap(string username, string password, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
             throw new Exception("Tài khoản hoặc mật khẩu trống");
         }
-        if (await fusionCache.GetOrDefaultAsync<bool?>(UserNotFoundKey(username))?? false)
+        if (await fusionCache.GetOrDefaultAsync<bool?>(UserNotFoundKey(username), token: cancellationToken) ?? false)
         {
             var messenger = $"Người dùng không tồn tại [{username}]";
             logger.Warning(messenger);
@@ -93,7 +108,7 @@ public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapCon
             var userLdap = _userLdapService.GetByPrincipalNameAsync(username).Result;
             if (userLdap is null)
             {
-                _ = fusionCache.SetAsync(UserNotFoundKey(username), true, TimeSpan.FromSeconds(30)).AsTask();
+                _ = fusionCache.SetAsync(UserNotFoundKey(username), true, TimeSpan.FromSeconds(30), token: cancellationToken).AsTask();
                 var messenger = $"Người dùng không tồn tại [{username}]";
                 logger.Warning(messenger);
                 throw new Exception(messenger);
@@ -102,6 +117,8 @@ public sealed class AuthenticateLdapService(ILogger logger, ILdapContext ldapCon
             ldapContext.Connection.Bind(
                 new System.Net.NetworkCredential(userLdap.UserPrincipalName, password)
             );
+            if (string.IsNullOrWhiteSpace(userLdap.DistinguishedName))
+                userLdap.DistinguishedName = username;
             return userLdap;
         }
         catch (Exception ex)

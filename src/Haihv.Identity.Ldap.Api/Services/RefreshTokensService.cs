@@ -33,16 +33,16 @@ public sealed class RefreshTokensService(ILogger logger,
         return refreshToken;
     }
     
-    public async Task<Result<RefreshToken>> VerifyOrCreateAsync(Guid clientId, string? token = null, CancellationToken cancellationToken = default)
+    public async Task<Result<RefreshToken>> VerifyOrCreateAsync(Guid clientId, string samAccountName, string? token = null, CancellationToken cancellationToken = default)
     {
         try
         {
             if (string.IsNullOrEmpty(token))
             {
-                return await GetOrCreateAsync(clientId, cancellationToken);
+                return await GetOrCreateAsync(clientId, samAccountName, cancellationToken);
             }
 
-            var refreshToken = await GetAndDeleteAsync(clientId, token, cancellationToken);
+            var refreshToken = await GetAndDeleteAsync(clientId, samAccountName, token, cancellationToken);
             if (refreshToken is not null)
             {
                 return refreshToken;
@@ -58,10 +58,14 @@ public sealed class RefreshTokensService(ILogger logger,
         }
     }
     
-    private async Task<RefreshToken> GetOrCreateAsync(Guid clientId, CancellationToken cancellationToken = default)
+    private async Task<RefreshToken> GetOrCreateAsync(Guid clientId, string samAccountName, CancellationToken cancellationToken = default)
     {
         var key = CacheKey(clientId);
-        var token = await fusionCache.GetOrSetAsync(key, CreateToken(clientId).Token, _tokenExpiration, cancellationToken);
+        var token = await fusionCache.GetOrSetAsync(key, 
+            CreateToken(clientId).Token,
+            _tokenExpiration, 
+            [samAccountName], 
+            cancellationToken);
         return new RefreshToken
         {
             UserId = clientId,
@@ -69,14 +73,14 @@ public sealed class RefreshTokensService(ILogger logger,
             Expires = DateTimeOffset.Now.Add(_tokenExpiration)
         };
     }
-    private async Task<RefreshToken?> GetAndDeleteAsync(Guid clientId, string token, CancellationToken cancellationToken = default)
+    private async Task<RefreshToken?> GetAndDeleteAsync(Guid clientId, string samAccountName, string token, CancellationToken cancellationToken = default)
     {
         var key = CacheKey(clientId);
         var tokenInCache = await fusionCache.GetOrDefaultAsync<string>(key, token: cancellationToken);
         if(string.IsNullOrWhiteSpace(tokenInCache) || tokenInCache != token)
             return null;
         var refreshToken = CreateToken(clientId);
-        await fusionCache.SetAsync(key, refreshToken.Token, _tokenExpiration, cancellationToken);
+        await fusionCache.SetAsync(key, refreshToken.Token, _tokenExpiration, [samAccountName], cancellationToken);
         return refreshToken;
     }
     

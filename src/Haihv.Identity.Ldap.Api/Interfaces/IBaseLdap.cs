@@ -13,12 +13,12 @@ public interface IBaseLdap
     /// <summary>
     /// Tên phân biệt của đối tượng LDAP.
     /// </summary>
-    string DistinguishedName { get; init; }
+    string DistinguishedName { get; set; }
 
     /// <summary>
     /// Tên tài khoản SAM của đối tượng LDAP.
     /// </summary>
-    string? SamAccountName { get; init; }
+    string SamAccountName { get; set; }
 
     /// <summary>
     /// Tên hiển thị của đối tượng LDAP.

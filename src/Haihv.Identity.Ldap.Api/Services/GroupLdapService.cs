@@ -3,15 +3,17 @@ using Haihv.Identity.Ldap.Api.Entities;
 using Haihv.Identity.Ldap.Api.Enum;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Haihv.Identity.Ldap.Api.Services;
 
-public sealed class GroupLdapService(ILdapContext ldapContext) : IGroupLdapService
+public sealed class GroupLdapService(IFusionCache fusionCache, ILdapContext ldapContext) : IGroupLdapService
 {
     /// <summary> 
     /// Distinguished Name (DN) của nhóm gốc LDAP.
     /// </summary>
     public string RootGroupDn => _ldapConnectionInfo.RootGroupDn;
+    public string GetCacheKey(string dn) => $"UserGroups{dn}";
 
     private readonly LdapConnectionInfo _ldapConnectionInfo = ldapContext.LdapConnectionInfo;
 
@@ -305,5 +307,18 @@ public sealed class GroupLdapService(ILdapContext ldapContext) : IGroupLdapServi
         }
 
         return groupNames;
+    }
+
+    public async Task SetCacheAsync(UserLdap userLdap, CancellationToken cancellationToken = default)
+    {
+        var key = GetCacheKey(userLdap.DistinguishedName);
+        var maybe = await fusionCache.TryGetAsync<List<string>>(key, token: cancellationToken);
+        if (!maybe.HasValue)
+        {
+            await fusionCache.SetAsync(key, 
+                await GetAllGroupNameByDnAsync(userLdap.DistinguishedName, cancellationToken),
+                tags: [userLdap.SamAccountName],
+                token: cancellationToken);
+        }
     }
 }
