@@ -58,7 +58,7 @@ jobs:
         uses: docker/build-push-action@v6.1.0
         with:
           context: ./src
-          file: ./src/DockerfileApi  # Đường dẫn tới DockerFile
+          file: ./src/DockerfileLdapApi  # Đường dẫn tới DockerFile
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }}, ${{ env.IMAGE_NAME }}:latest
 
