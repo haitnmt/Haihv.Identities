@@ -37,9 +37,8 @@ public static class LoginEndpoints
     }
     private static async Task<IResult> Verify(HttpContext context, ILogger logger, IFusionCache fusionCache)
      => await context.VerifyToken(logger, fusionCache) ? Results.Ok() : Results.Unauthorized();
-    
-    private static async Task<IResult> Logout(HttpContext context, ILogger logger, IFusionCache fusionCache, 
-        [FromQuery] bool all = false)
+
+    private static async Task<IResult> Logout(HttpContext context, ILogger logger, IFusionCache fusionCache, [FromQuery] bool all = false)
     {
         var userPrincipalName = context.GetUserPrincipalName();
         var ipAddr = context.GetIpInfo().IpAddress;
@@ -48,7 +47,6 @@ public static class LoginEndpoints
             logger.Warning("Không tìm thấy thông tin người dùng! {ipAddr}", ipAddr);
             return Results.BadRequest("Không tìm thấy thông tin người dùng!");
         }
-
         if (all)
         {
             var key = GetCacheKeyLogoutTime(userPrincipalName);
@@ -57,17 +55,17 @@ public static class LoginEndpoints
         _ = fusionCache.RemoveByTagAsync(userPrincipalName).AsTask();
         _ = fusionCache.RemoveByTagAsync(context.GetUsername()).AsTask();
         _ = fusionCache.RemoveByTagAsync(context.GetSamAccountName()).AsTask();
-        logger.Information("Đăng xuất thành công! {ipAddr} {UserPrincipalName}", 
-            ipAddr, 
+        logger.Information("Đăng xuất thành công! {ipAddr} {UserPrincipalName}",
+            ipAddr,
             context.GetDistinguishedName());
         return Results.Ok();
     }
     private static async Task<IResult> LogoutAll(HttpContext context, ILogger logger, IFusionCache fusionCache)
      => await Logout(context, logger, fusionCache, true);
-    private record LoginResponse(string Token, Guid TokenId, string RefreshToken, DateTime Expiry);
 
-    private static async Task<IResult> Login([FromBody] LoginRequest request,
-        ILogger logger,
+
+    private record LoginResponse(string Token, Guid TokenId, string RefreshToken, DateTime Expiry);
+    private static async Task<IResult> Login(ILogger logger,
         IAuthenticateLdapService authenticateLdapService,
         IGroupLdapService groupLdapService,
         TokenProvider tokenProvider,
@@ -77,7 +75,12 @@ public static class LoginEndpoints
         IFusionCache fusionCache,
         HttpContext httpContext)
     {
-        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+        var loginRequest = await httpContext.Request.ReadFromJsonAsync<LoginRequest>();
+        if (loginRequest is null)
+        {
+            return Results.BadRequest(new Response<LoginResponse>("Không tìm thấy thông tin đăng nhập!"));
+        }
+        if (string.IsNullOrWhiteSpace(loginRequest.Username) || string.IsNullOrWhiteSpace(loginRequest.Password))
         {
             return Results.BadRequest(new Response<LoginResponse>("Tên đăng nhập và mật khẩu không được để trống!"));
         }
@@ -92,9 +95,9 @@ public static class LoginEndpoints
 
         const string errorMessage = "Thông tin đăng nhập không chính xác!";
         var sw = Stopwatch.StartNew();
-        request.Username = request.Username.Trim().ToLower();
+        loginRequest.Username = loginRequest.Username.Trim().ToLower();
         // Xác thực trong cơ sở dữ liệu trước:
-        var result = await authenticateLdapService.Authenticate(request.Username, request.Password);
+        var result = await authenticateLdapService.Authenticate(loginRequest.Username, loginRequest.Password);
 
         return await result.Match<Task<IResult>>(async userLdap =>
             {
@@ -104,7 +107,7 @@ public static class LoginEndpoints
                     var elapsed = sw.ElapsedMilliseconds;
                     logger.Warning("Đăng nhập thất bại: [{Elapsed} ms] {Username} {ClientIp}",
                         elapsed,
-                        request.Username,
+                        loginRequest.Username,
                         ipInfo);
                     if (ipInfo.IsPrivate)
                     {
@@ -115,9 +118,14 @@ public static class LoginEndpoints
                         new Response<LoginResponse>(
                             $"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}"));
                 }
+                // Tao cache cho thông tin người dùng
+                var key = groupLdapService.GetCacheKey(userLdap.DistinguishedName);
+                _ = fusionCache.GetOrSetAsync(key, token =>
+                                groupLdapService.GetAllGroupNameByDnAsync(userLdap.DistinguishedName, token), tags: [userLdap.SamAccountName]).AsTask();
+
                 // Tạo token
-                var accessToken = tokenProvider.GenerateToken(userLdap, request.Username);
-                
+                var accessToken = tokenProvider.GenerateToken(userLdap, loginRequest.Username);
+
                 // Tạo refresh token
                 var tokenId = Guid.CreateVersion7();
                 var resultRefreshToken = await refreshTokensService.VerifyOrCreateAsync(tokenId, userLdap.SamAccountName);
@@ -126,7 +134,7 @@ public static class LoginEndpoints
                     refreshToken =>
                     {
                         // Xóa thời gian đăng xuất
-                        var key = GetCacheKeyLogoutTime(request.Username);
+                        var key = GetCacheKeyLogoutTime(loginRequest.Username);
                         _ = fusionCache.RemoveAsync(key).AsTask();
                         // Xoá lock IP
                         if (!ipInfo.IsPrivate)
@@ -137,14 +145,14 @@ public static class LoginEndpoints
                         {
                             logger.Warning("Đăng nhập thành công: [{Elapsed} ms] {Username} {ClientIp}",
                                 elapsed,
-                                request.Username,
+                                loginRequest.Username,
                                 ipInfo);
                         }
                         else
                         {
                             logger.Information("Đăng nhập thành công: [{Elapsed} ms] {Username} {ClientIp}",
                                 elapsed,
-                                request.Username,
+                                loginRequest.Username,
                                 ipInfo);
                         }
                         return Results.Ok(
@@ -160,7 +168,7 @@ public static class LoginEndpoints
                 var elapsed = sw.ElapsedMilliseconds;
                 logger.Error(ex, "Đăng nhập thất bại: [{Elapsed} ms] {Username} {ClientIp}",
                     elapsed,
-                    request.Username,
+                    loginRequest.Username,
                     ipInfo);
                 if (ipInfo.IsPrivate)
                 {

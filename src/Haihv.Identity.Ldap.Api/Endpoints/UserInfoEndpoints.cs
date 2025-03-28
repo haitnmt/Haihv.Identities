@@ -17,11 +17,12 @@ public static class UserEndpoints
         mapGroup.MapGet("/checkGroup", GetCheckGroup)
             .RequireAuthorization();
     }
-    
+
     private static async Task<IResult> GetCheckGroup(
-        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, IFusionCache fusionCache,
-        [FromQuery] string? groupName = null, [FromQuery] bool clearCache = false)
+        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, IFusionCache fusionCache)
     {
+        var groupName = context.Request.Query["groupName"].ToString();
+        var clearCache = context.Request.Query["clearCache"].ToString() == "true";
         if (!await context.VerifyToken(logger, fusionCache))
         {
             return Results.Unauthorized();
@@ -53,17 +54,17 @@ public static class UserEndpoints
         }
         catch (Exception exception)
         {
-            logger.Error(exception, "Lỗi khi kiểm tra nhóm của người dùng {ipAddr} {UserPrincipalName}", 
+            logger.Error(exception, "Lỗi khi kiểm tra nhóm của người dùng {ipAddr} {UserPrincipalName}",
                 ipAddr, userPrincipalName);
             return Results.BadRequest("Lỗi khi kiểm tra nhóm của người dùng");
         }
     }
-    
-    
+
+
     private static async Task<IResult> GetGroups(
-        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, IFusionCache fusionCache,
-        [FromQuery] bool clearCache = false)
+        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, IFusionCache fusionCache)
     {
+
         if (!await context.VerifyToken(logger, fusionCache))
         {
             return Results.Unauthorized();
@@ -81,6 +82,7 @@ public static class UserEndpoints
         var key = groupLdapService.GetCacheKey(dn);
         try
         {
+            var clearCache = context.Request.Query["clearCache"].ToString() == "true";
             if (clearCache)
             {
                 await fusionCache.RemoveAsync(key);
@@ -92,10 +94,10 @@ public static class UserEndpoints
         }
         catch (Exception e)
         {
-            logger.Error(e, "Lỗi khi lấy thông tin nhóm {ipAddr} {UserPrincipalName}", 
+            logger.Error(e, "Lỗi khi lấy thông tin nhóm {ipAddr} {UserPrincipalName}",
                 ipAddr, userPrincipalName);
             return Results.BadRequest("Lỗi khi lấy thông tin nhóm");
         }
     }
-    
+
 }
