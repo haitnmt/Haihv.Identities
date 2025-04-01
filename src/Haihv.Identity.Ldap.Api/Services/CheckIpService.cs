@@ -1,4 +1,5 @@
-using ZiggyCreatures.Caching.Fusion;
+
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace Haihv.Identity.Ldap.Api.Services;
 
@@ -29,7 +30,7 @@ public interface ICheckIpService
     Task ClearLockAsync(string ip);
 }
 
-public sealed class CheckIpService(IFusionCache fusionCache) : ICheckIpService
+public sealed class CheckIpService(HybridCache hybridCache) : ICheckIpService
 {
     private const string Key = "CheckIp";
     private const int SecondStep = 300;
@@ -45,7 +46,8 @@ public sealed class CheckIpService(IFusionCache fusionCache) : ICheckIpService
     /// </returns>
     public async Task<(int Count, long ExprSecond)> CheckLockAsync(string ip)
     {
-        var lockInfo = await fusionCache.GetOrDefaultAsync(LockKey(ip), new LockInfo());
+        var lockInfo = await hybridCache.GetOrCreateAsync(LockKey(ip), 
+            _ => ValueTask.FromResult<LockInfo?>(null));
         return lockInfo is null ? (0,0L) :
             // Tính thời gian lock còn lại theo giây (làm tròn kiểu long)
             (lockInfo.Count, (long) Math.Ceiling((lockInfo.ExprTime - DateTime.Now).TotalSeconds));
@@ -59,7 +61,8 @@ public sealed class CheckIpService(IFusionCache fusionCache) : ICheckIpService
     /// </param>
     public async Task SetLockAsync(string ip)
     {
-        var lockInfo = await fusionCache.GetOrDefaultAsync<LockInfo>(LockKey(ip));
+        var lockInfo = await hybridCache.GetOrCreateAsync(LockKey(ip), 
+            _ => ValueTask.FromResult<LockInfo?>(null));
         double expSecond = 0;
         const int totalSecond1Day = 86400;
         if (lockInfo is null)
@@ -84,7 +87,7 @@ public sealed class CheckIpService(IFusionCache fusionCache) : ICheckIpService
             }
         }
         lockInfo.ExprTime = DateTime.Now.AddSeconds(expSecond);
-        await fusionCache.SetAsync(LockKey(ip), lockInfo);
+        await hybridCache.SetAsync(LockKey(ip), lockInfo);
     }
     
     /// <summary>
@@ -95,7 +98,7 @@ public sealed class CheckIpService(IFusionCache fusionCache) : ICheckIpService
     /// </param>
     public async Task ClearLockAsync(string ip)
     {
-        await fusionCache.RemoveAsync(LockKey(ip));
+        await hybridCache.RemoveAsync(LockKey(ip));
     }
     
     private sealed class LockInfo(int count, DateTime exprTime)

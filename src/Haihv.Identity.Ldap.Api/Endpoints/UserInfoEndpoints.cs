@@ -1,8 +1,7 @@
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Services;
-using Microsoft.AspNetCore.Mvc;
-using ZiggyCreatures.Caching.Fusion;
+using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Endpoints;
@@ -19,11 +18,11 @@ public static class UserEndpoints
     }
 
     private static async Task<IResult> GetCheckGroup(
-        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, IFusionCache fusionCache)
+        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, HybridCache hybridCache)
     {
         var groupName = context.Request.Query["groupName"].ToString();
         var clearCache = context.Request.Query["clearCache"].ToString() == "true";
-        if (!await context.VerifyToken(logger, fusionCache))
+        if (!await context.VerifyToken(logger, hybridCache))
         {
             return Results.Unauthorized();
         }
@@ -45,10 +44,11 @@ public static class UserEndpoints
         {
             if (clearCache)
             {
-                await fusionCache.RemoveAsync(key);
+                await hybridCache.RemoveAsync(key);
             }
-            var groups = await fusionCache.GetOrSetAsync(key, token =>
-                groupLdapService.GetAllGroupNameByDnAsync(dn, token), tags: [samAccountName]
+            var groups = await hybridCache.GetOrCreateAsync(key, 
+                async token => await groupLdapService.GetAllGroupNameByDnAsync(dn, token),
+                tags: [samAccountName]
             );
             return groups.Contains(groupName) ? Results.Ok(true) : Results.BadRequest(groupName);
         }
@@ -62,10 +62,10 @@ public static class UserEndpoints
 
 
     private static async Task<IResult> GetGroups(
-        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, IFusionCache fusionCache)
+        HttpContext context, ILogger logger, IGroupLdapService groupLdapService, HybridCache hybridCache)
     {
 
-        if (!await context.VerifyToken(logger, fusionCache))
+        if (!await context.VerifyToken(logger, hybridCache))
         {
             return Results.Unauthorized();
         }
@@ -85,10 +85,11 @@ public static class UserEndpoints
             var clearCache = context.Request.Query["clearCache"].ToString() == "true";
             if (clearCache)
             {
-                await fusionCache.RemoveAsync(key);
+                await hybridCache.RemoveAsync(key);
             }
-            var groups = await fusionCache.GetOrSetAsync(key, token =>
-                groupLdapService.GetAllGroupNameByDnAsync(dn, token), tags: [samAccountName]
+            var groups = await hybridCache.GetOrCreateAsync(key,
+                async token => await groupLdapService.GetAllGroupNameByDnAsync(dn, token), 
+                tags: [samAccountName]
             );
             return Results.Ok(groups);
         }

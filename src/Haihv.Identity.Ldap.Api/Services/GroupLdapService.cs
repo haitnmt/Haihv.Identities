@@ -3,17 +3,18 @@ using Haihv.Identity.Ldap.Api.Entities;
 using Haihv.Identity.Ldap.Api.Enum;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
-using ZiggyCreatures.Caching.Fusion;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace Haihv.Identity.Ldap.Api.Services;
 
-public sealed class GroupLdapService(IFusionCache fusionCache, ILdapContext ldapContext) : IGroupLdapService
+public sealed class GroupLdapService(HybridCache hybridCache, ILdapContext ldapContext) : IGroupLdapService
 {
     /// <summary> 
     /// Distinguished Name (DN) của nhóm gốc LDAP.
     /// </summary>
     public string RootGroupDn => _ldapConnectionInfo.RootGroupDn;
-    public string GetCacheKey(string dn) => $"UserGroups{dn}";
+
+    public string GetCacheKey(string dn) => $"UserGroups:{dn}";
 
     private readonly LdapConnectionInfo _ldapConnectionInfo = ldapContext.LdapConnectionInfo;
 
@@ -264,7 +265,7 @@ public sealed class GroupLdapService(IFusionCache fusionCache, ILdapContext ldap
                 where !string.IsNullOrEmpty(dn)
                 select dn).ToList();
     }
-    
+
     /// <summary>
     /// Lấy danh sách tất cả (có đệ quy) tên nhóm theo distinguishedName.
     /// </summary>
@@ -309,16 +310,14 @@ public sealed class GroupLdapService(IFusionCache fusionCache, ILdapContext ldap
         return groupNames;
     }
 
-    public async Task SetCacheAsync(UserLdap userLdap, CancellationToken cancellationToken = default)
+    public Task SetCacheAsync(UserLdap userLdap, CancellationToken cancellationToken = default)
     {
+        // Tao cache cho thông tin người dùng
         var key = GetCacheKey(userLdap.DistinguishedName);
-        var maybe = await fusionCache.TryGetAsync<List<string>>(key, token: cancellationToken);
-        if (!maybe.HasValue)
-        {
-            await fusionCache.SetAsync(key, 
-                await GetAllGroupNameByDnAsync(userLdap.DistinguishedName, cancellationToken),
-                tags: [userLdap.SamAccountName],
-                token: cancellationToken);
-        }
+        _ = hybridCache.GetOrCreateAsync(key,
+            async token => await GetAllGroupNameByDnAsync(userLdap.DistinguishedName, token),
+            tags: [userLdap.SamAccountName],
+            cancellationToken: cancellationToken).AsTask();
+        return Task.CompletedTask;
     }
 }

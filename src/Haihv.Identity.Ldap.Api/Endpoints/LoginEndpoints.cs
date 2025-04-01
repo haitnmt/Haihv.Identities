@@ -4,8 +4,8 @@ using Haihv.Identity.Ldap.Api.Models;
 using Haihv.Identity.Ldap.Api.Services;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Options;
-using ZiggyCreatures.Caching.Fusion;
 using ILogger = Serilog.ILogger;
 using LoginRequest = Haihv.Identity.Ldap.Api.Models.LoginRequest;
 
@@ -25,20 +25,21 @@ public static class LoginEndpoints
     }
 
     private static string GetCacheKeyLogoutTime(string username) => $"LogoutTime:{username}";
-    public static async Task<bool> VerifyToken(this HttpContext context, ILogger logger, IFusionCache fusionCache)
+    public static async Task<bool> VerifyToken(this HttpContext context, ILogger logger, HybridCache hybridCache)
     {
         var userPrincipalName = context.GetUserPrincipalName();
         var ipAddr = context.GetIpInfo().IpAddress;
         // Kiểm tra thông tin token
-        var exp = await fusionCache.GetOrDefaultAsync(GetCacheKeyLogoutTime(userPrincipalName), 0L);
+        var exp = await hybridCache.GetOrCreateAsync(GetCacheKeyLogoutTime(userPrincipalName),
+            _ => new ValueTask<long>(0L));
         if (exp <= 0 || context.GetExpiry() <= exp) return true;
         logger.Warning("Token đã hết hạn! {ipAddr} {UserPrincipalName}", ipAddr, userPrincipalName);
         return false;
     }
-    private static async Task<IResult> Verify(HttpContext context, ILogger logger, IFusionCache fusionCache)
-     => await context.VerifyToken(logger, fusionCache) ? Results.Ok() : Results.Unauthorized();
+    private static async Task<IResult> Verify(HttpContext context, ILogger logger, HybridCache hybridCache)
+     => await context.VerifyToken(logger, hybridCache) ? Results.Ok() : Results.Unauthorized();
 
-    private static async Task<IResult> Logout(HttpContext context, ILogger logger, IFusionCache fusionCache, [FromQuery] bool all = false)
+    private static async Task<IResult> Logout(HttpContext context, ILogger logger, HybridCache hybridCache, [FromQuery] bool all = false)
     {
         var userPrincipalName = context.GetUserPrincipalName();
         var ipAddr = context.GetIpInfo().IpAddress;
@@ -50,18 +51,17 @@ public static class LoginEndpoints
         if (all)
         {
             var key = GetCacheKeyLogoutTime(userPrincipalName);
-            await fusionCache.SetAsync(key, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            await hybridCache.SetAsync(key, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
         }
-        _ = fusionCache.RemoveByTagAsync(userPrincipalName).AsTask();
-        _ = fusionCache.RemoveByTagAsync(context.GetUsername()).AsTask();
-        _ = fusionCache.RemoveByTagAsync(context.GetSamAccountName()).AsTask();
+        List<string> tags = [userPrincipalName, context.GetUsername(), context.GetSamAccountName()];
+        _ = hybridCache.RemoveByTagAsync(tags.Distinct()).AsTask();
         logger.Information("Đăng xuất thành công! {ipAddr} {UserPrincipalName}",
             ipAddr,
             context.GetDistinguishedName());
         return Results.Ok();
     }
-    private static async Task<IResult> LogoutAll(HttpContext context, ILogger logger, IFusionCache fusionCache)
-     => await Logout(context, logger, fusionCache, true);
+    private static async Task<IResult> LogoutAll(HttpContext context, ILogger logger, HybridCache hybridCache)
+     => await Logout(context, logger, hybridCache, true);
 
 
     private record LoginResponse(string Token, Guid TokenId, string RefreshToken, DateTime Expiry);
@@ -72,7 +72,7 @@ public static class LoginEndpoints
         IRefreshTokensService refreshTokensService,
         ICheckIpService checkIpService,
         IOptions<JwtTokenOptions> options,
-        IFusionCache fusionCache,
+        HybridCache hybridCache,
         HttpContext httpContext)
     {
         var loginRequest = await httpContext.Request.ReadFromJsonAsync<LoginRequest>();
@@ -118,11 +118,6 @@ public static class LoginEndpoints
                         new Response<LoginResponse>(
                             $"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}"));
                 }
-                // Tao cache cho thông tin người dùng
-                var key = groupLdapService.GetCacheKey(userLdap.DistinguishedName);
-                _ = fusionCache.GetOrSetAsync(key, token =>
-                                groupLdapService.GetAllGroupNameByDnAsync(userLdap.DistinguishedName, token), tags: [userLdap.SamAccountName]).AsTask();
-
                 // Tạo token
                 var accessToken = tokenProvider.GenerateToken(userLdap, loginRequest.Username);
 
@@ -134,8 +129,8 @@ public static class LoginEndpoints
                     refreshToken =>
                     {
                         // Xóa thời gian đăng xuất
-                        var key = GetCacheKeyLogoutTime(loginRequest.Username);
-                        _ = fusionCache.RemoveAsync(key).AsTask();
+                        var keyLogoutTime = GetCacheKeyLogoutTime(loginRequest.Username);
+                        _ = hybridCache.RemoveAsync(keyLogoutTime).AsTask();
                         // Xoá lock IP
                         if (!ipInfo.IsPrivate)
                             _ = checkIpService.ClearLockAsync(ipInfo.IpAddress);

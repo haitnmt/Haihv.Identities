@@ -1,10 +1,9 @@
 using System.DirectoryServices.Protocols;
-using Haihv.Identity.Ldap.Api.Endpoints;
 using Haihv.Identity.Ldap.Api.Entities;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Extensions;
 using LanguageExt.Common;
-using ZiggyCreatures.Caching.Fusion;
+using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Services;
@@ -22,17 +21,17 @@ public interface IAuthenticateLdapService
 /// </summary>
 /// <param name="ldapContext">Ngữ cảnh LDAP.</param>
 public sealed class AuthenticateLdapService(ILogger logger, 
-    IFusionCache fusionCache,
+    HybridCache hybridCache,
     ILdapContext ldapContext,
     IGroupLdapService groupLdapService
     ) : IAuthenticateLdapService
 {
-    private const string Key = "UserLdap:";
+    private const string KeyUserLdap = "UserLdap:";
     private static string CacheKey(string username, string password)
-        => Key + string.Join("-", username, password).ComputeHash();
+        => KeyUserLdap + string.Join("-", username, password).ComputeHash(); // Tạo khóa cache từ username và password
 
     private static string UserNotFoundKey(string username)
-        => $"{Key}NotFound:{username}";
+        => $"{KeyUserLdap}NotFound:{username}";
     private readonly TimeSpan _expiration = TimeSpan.FromMinutes(15);
 
     private readonly UserLdapService _userLdapService = new (ldapContext);
@@ -53,14 +52,20 @@ public sealed class AuthenticateLdapService(ILogger logger,
         var cacheKey = CacheKey(username, password);
         try
         {
-            var userLdap = await fusionCache.GetOrDefaultAsync<UserLdap>(cacheKey);
+            var userLdap = await hybridCache.GetOrCreateAsync(cacheKey,
+                _ => ValueTask.FromResult<UserLdap?>(null));
             if (userLdap is not null)
             {
                 return userLdap;
             }
             // Thực hiện xác thực
             userLdap = await AuthenticateInLdap(username, password);
-            _ = fusionCache.SetAsync(cacheKey, userLdap, _expiration, tags:[userLdap.SamAccountName]).AsTask();
+            var cacheEntryOptions = new HybridCacheEntryOptions
+            {
+                Expiration = _expiration,
+                LocalCacheExpiration = TimeSpan.FromMinutes(5),
+            }; 
+            _ = hybridCache.SetAsync(cacheKey, userLdap, cacheEntryOptions, tags:[userLdap.SamAccountName]).AsTask();
             // Lưu Cache thông tin nhóm của người dùng
             _ = groupLdapService.SetCacheAsync(userLdap);
             return userLdap;
@@ -89,12 +94,16 @@ public sealed class AuthenticateLdapService(ILogger logger,
         {
             throw new Exception("Tài khoản hoặc mật khẩu trống");
         }
-        if (await fusionCache.GetOrDefaultAsync<bool?>(UserNotFoundKey(username), token: cancellationToken) ?? false)
+        var notFoundKey = UserNotFoundKey(username);
+        var notFound = await hybridCache.GetOrCreateAsync(notFoundKey,
+            _ => new ValueTask<bool>(false), cancellationToken: cancellationToken);
+        if (notFound)
         {
             var messenger = $"Người dùng không tồn tại [{username}]";
             logger.Warning(messenger);
             throw new Exception(messenger);
         }
+        _ = hybridCache.RemoveAsync(notFoundKey, cancellationToken).AsTask();
         var ldapConnectionInfo = ldapContext.LdapConnectionInfo;
         if (string.IsNullOrWhiteSpace(ldapConnectionInfo.Host) ||
             string.IsNullOrWhiteSpace(ldapConnectionInfo.DomainFullname) ||
@@ -108,7 +117,12 @@ public sealed class AuthenticateLdapService(ILogger logger,
             var userLdap = _userLdapService.GetByPrincipalNameAsync(username).Result;
             if (userLdap is null)
             {
-                _ = fusionCache.SetAsync(UserNotFoundKey(username), true, TimeSpan.FromSeconds(30), token: cancellationToken).AsTask();
+                var cacheEntryOptions = new HybridCacheEntryOptions
+                {
+                    Expiration = TimeSpan.FromSeconds(30),
+                    LocalCacheExpiration = TimeSpan.FromSeconds(30),
+                }; 
+                _ = hybridCache.SetAsync(UserNotFoundKey(username), true, cacheEntryOptions, cancellationToken: cancellationToken).AsTask();
                 var messenger = $"Người dùng không tồn tại [{username}]";
                 logger.Warning(messenger);
                 throw new Exception(messenger);

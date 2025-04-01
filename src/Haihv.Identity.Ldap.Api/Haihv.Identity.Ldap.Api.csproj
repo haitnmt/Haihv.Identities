@@ -6,8 +6,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
 		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 		<Copyright>vpdkbacninh.vn | haihv.vn</Copyright>
-		<AssemblyVersion>2025.03.28.1</AssemblyVersion>
-		<FileVersion>2025.03.28.1</FileVersion>
+        <AssemblyVersion>2025.04.01</AssemblyVersion>
+        <FileVersion>2025.04.01</FileVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -15,14 +15,13 @@
         <PackageReference Include="LanguageExt.Core" Version="4.4.9" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.3" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.3" />
+        <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="9.3.0" />
         <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.2" />
         <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.6.1" />
         <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
         <PackageReference Include="Serilog.Extensions" Version="8.0.3" />
         <PackageReference Include="Serilog.Settings.Configuration" Version="9.0.0" />
         <PackageReference Include="System.DirectoryServices.Protocols" Version="9.0.3" />
-        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.1.0" />
-        <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.1.0" />
     </ItemGroup>
 
 </Project>

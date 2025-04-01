@@ -18,7 +18,7 @@ builder.Services.AddOpenApi();
 builder.AddLogToElasticsearch();
 
 // Add Caching
-builder.AddFusionCache();
+builder.AddCache();
 
 // Add service for LDAP
 builder.AddLdapContext();
