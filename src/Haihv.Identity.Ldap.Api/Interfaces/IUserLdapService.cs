@@ -15,11 +15,11 @@ public interface IUserLdapService
     /// <summary>
     /// Lấy thông tin người dùng từ LDAP.
     /// </summary>
-    /// <param name="distinguishedName">
-    /// Tên định danh của người dùng cần lấy thông tin.
+    /// <param name="samAccountName">
+    /// Tên đăng nhập của người dùng (sAMAccountName) trong Active Directory.
     /// </param>
     /// <param name="whenChanged"></param>
     /// <returns>Đối tượng UserLdap chứa thông tin người dùng.</returns>
-    Task<UserLdap?> GetByDistinguishedNameAsync(string distinguishedName, DateTime whenChanged = default);
+    Task<UserLdap?> GetBySamAccountNameAsync(string samAccountName, DateTime whenChanged = default);
     
 }

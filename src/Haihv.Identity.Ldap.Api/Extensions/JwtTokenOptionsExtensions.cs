@@ -1,4 +1,6 @@
-namespace Haihv.Identity.Ldap.Api.Services;
+using Haihv.Identity.Ldap.Api.Options;
+
+namespace Haihv.Identity.Ldap.Api.Extensions;
 
 public static class JwtTokenOptionsExtensions
 {

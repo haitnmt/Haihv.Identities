@@ -3,6 +3,7 @@ using Haihv.Identity.Ldap.Api.Entities;
 using Haihv.Identity.Ldap.Api.Enum;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
+using Haihv.Identity.Ldap.Api.Settings;
 using Microsoft.Extensions.Caching.Hybrid;
 
 namespace Haihv.Identity.Ldap.Api.Services;
@@ -13,9 +14,7 @@ public sealed class GroupLdapService(HybridCache hybridCache, ILdapContext ldapC
     /// Distinguished Name (DN) của nhóm gốc LDAP.
     /// </summary>
     public string RootGroupDn => _ldapConnectionInfo.RootGroupDn;
-
-    public string GetCacheKey(string dn) => $"UserGroups:{dn}";
-
+    
     private readonly LdapConnectionInfo _ldapConnectionInfo = ldapContext.LdapConnectionInfo;
 
     private readonly AttributeTypeLdap[] _attributesToReturns =
@@ -309,11 +308,11 @@ public sealed class GroupLdapService(HybridCache hybridCache, ILdapContext ldapC
 
         return groupNames;
     }
-
+    
     public Task SetCacheAsync(UserLdap userLdap, CancellationToken cancellationToken = default)
     {
         // Tao cache cho thông tin người dùng
-        var key = GetCacheKey(userLdap.DistinguishedName);
+        var key = CacheSettings.LdapGroupsKey(userLdap.SamAccountName);
         _ = hybridCache.GetOrCreateAsync(key,
             async token => await GetAllGroupNameByDnAsync(userLdap.DistinguishedName, token),
             tags: [userLdap.SamAccountName],

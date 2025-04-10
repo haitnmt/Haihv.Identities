@@ -8,7 +8,7 @@ using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.Login;
 
-public static class GetLogout
+public static class PostGetLogout
 {
     public record Query(bool All) : IRequest<bool>;
     public class Handler(

@@ -56,19 +56,18 @@ public sealed class UserLdapService(ILdapContext ldapContext) : IUserLdapService
         var userLdap = UserLdapFromSearchResultEntryCollection(resultEntries)[0];
         return userLdap;
     }
-    
     /// <summary>
     /// Lấy thông tin người dùng từ LDAP.
     /// </summary>
-    /// <param name="distinguishedName">
-    /// Tên định danh của người dùng cần lấy thông tin.
+    /// <param name="samAccountName">
+    /// Tên tài khoản người dùng cần lấy thông tin.
     /// </param>
     /// <param name="whenChanged"></param>
     /// <returns>Đối tượng UserLdap chứa thông tin người dùng.</returns>
-    public async Task<UserLdap?> GetByDistinguishedNameAsync(string distinguishedName, DateTime whenChanged = default)
+    public async Task<UserLdap?> GetBySamAccountNameAsync(string samAccountName, DateTime whenChanged = default)
     {
         AttributeWithValueCollectionLdap attributeWithValueCollection = new();
-        attributeWithValueCollection.Add(AttributeTypeLdap.DistinguishedName, [distinguishedName]);
+        attributeWithValueCollection.Add(AttributeTypeLdap.SamAccountName, [samAccountName]);
         // Thêm điều kiện lọc theo ngày thay đổi cuối cùng của nhóm
         if (whenChanged != default && whenChanged != DateTime.MinValue)
             attributeWithValueCollection.Add(AttributeTypeLdap.WhenChanged,

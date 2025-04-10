@@ -1,4 +1,4 @@
-namespace Haihv.Identity.Ldap.Api.Services;
+namespace Haihv.Identity.Ldap.Api.Options;
 
 public sealed class JwtTokenOptions
 {

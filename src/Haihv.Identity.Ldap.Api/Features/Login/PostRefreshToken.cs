@@ -9,7 +9,7 @@ using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.Login;
 
-public static class RefreshToken
+public static class PostRefreshToken
 {
     public record Command(string RefreshToken) : IRequest<Response?>;
     public record Response(string AccessToken, string RefreshToken);

@@ -1,13 +1,12 @@
 using Carter;
 using Haihv.Identity.Ldap.Api.Extensions;
-using Haihv.Identity.Ldap.Api.Settings;
 using MediatR;
 using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.Login;
 
-public static class VerifyToken
+public static class PostVerifyToken
 {
     public record Query : IRequest<bool>;
 
@@ -27,7 +26,7 @@ public static class VerifyToken
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
-            app.MapGet("/api/verify", async (ISender sender) =>
+            app.MapPost("/api/verify", async (ISender sender) =>
                 {
                     try
                     {

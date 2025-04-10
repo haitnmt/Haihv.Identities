@@ -8,17 +8,17 @@ using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.LdapGroups;
 
-public static class GetLdapGroup
+public static class GetLdapGroups
 {
-    public record Query(string GroupName) : IRequest<bool>;
+    public record Query(bool ClearCache = false) : IRequest<List<string>>;
     public class Handler(
         IHttpContextAccessor httpContextAccessor,
         ILogger logger,
         HybridCache hybridCache,
-        IGroupLdapService groupLdapService) : IRequestHandler<Query, bool>
+        IGroupLdapService groupLdapService) : IRequestHandler<Query, List<string>>
     {
 
-        public async Task<bool> Handle(Query request, CancellationToken cancellationToken)
+        public async Task<List<string>> Handle(Query request, CancellationToken cancellationToken)
         {
             var httpContext = httpContextAccessor.HttpContext
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
@@ -38,8 +38,7 @@ public static class GetLdapGroup
             var key = CacheSettings.LdapGroupsKey(samAccountName);
             try
             {
-                var clearCache = httpContext.Request.Query["clearCache"].ToString().Equals("true", StringComparison.CurrentCultureIgnoreCase);
-                if (clearCache)
+                if (request.ClearCache)
                 {
                     await hybridCache.RemoveAsync(key, cancellationToken);
                 }
@@ -47,10 +46,12 @@ public static class GetLdapGroup
                     async token => await groupLdapService.GetAllGroupNameByDnAsync(dn, token), 
                     tags: [samAccountName], 
                     cancellationToken: cancellationToken);
-                return groups.Contains(request.GroupName);
+                return groups;
             }
-            catch(Exception ex){
-                logger.Error(ex,"{userPrincipalName} {dn} {groupName}", userPrincipalName,dn,request.GroupName);
+            catch (Exception ex)
+            {
+                logger.Error(ex,":Lỗi khi lấy danh sách nhóm LDAP cho người dùng {samAccountName}", 
+                    samAccountName);
                 throw;
             }
         }
@@ -58,16 +59,18 @@ public static class GetLdapGroup
         {
             public void AddRoutes(IEndpointRouteBuilder app)
             {
-                app.MapGet("/api/ldapGroup/check", async (ISender sender, string groupName) =>
+                app.MapGet("/api/ldapGroup", async (ISender sender, bool clearCache = false) =>
                     {
                         try
                         {
-                            var response = await sender.Send(new Query(groupName));
-                            return response ? Results.Ok("Token hợp lệ!") : Results.Unauthorized();
+                            var response = await sender.Send(new Query(clearCache));
+                            return response.Count > 0 ? Results.Ok(response) : Results.NoContent();
                         } 
                         catch (Exception e)
                         {
-                            return Results.BadRequest(e.Message);
+                            return e is UnauthorizedAccessException ? 
+                                Results.Unauthorized() : 
+                                Results.Problem(detail:e.Message);
                         }
                     })
                     .WithTags("LdapGroups")

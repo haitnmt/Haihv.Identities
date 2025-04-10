@@ -2,13 +2,14 @@ using System.Diagnostics;
 using Carter;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Services;
+using Haihv.Identity.Ldap.Api.Settings;
 using MediatR;
 using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.Login;
 
-public static class Login
+public static class PostLogin
 {
     public record Command(string Username, string Password, bool RememberMe) : IRequest<Response>;
     

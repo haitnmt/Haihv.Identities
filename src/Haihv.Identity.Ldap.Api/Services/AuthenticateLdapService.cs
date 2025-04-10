@@ -1,7 +1,7 @@
 using System.DirectoryServices.Protocols;
 using Haihv.Identity.Ldap.Api.Entities;
 using Haihv.Identity.Ldap.Api.Interfaces;
-using Haihv.Identity.Ldap.Api.Extensions;
+using Haihv.Identity.Ldap.Api.Settings;
 using LanguageExt.Common;
 using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
@@ -13,7 +13,7 @@ namespace Haihv.Identity.Ldap.Api.Services;
 /// </summary>
 public interface IAuthenticateLdapService
 {
-    Task<Result<UserLdap>> Authenticate(string username, string password);
+    Task<Result<UserLdap>> Authenticate(string username, string password, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -26,13 +26,8 @@ public sealed class AuthenticateLdapService(ILogger logger,
     IGroupLdapService groupLdapService
     ) : IAuthenticateLdapService
 {
-    private const string KeyUserLdap = "UserLdap:";
-    private static string CacheKey(string username, string password)
-        => KeyUserLdap + string.Join("-", username, password).ComputeHash(); // Tạo khóa cache từ username và password
-
     private static string UserNotFoundKey(string username)
-        => $"{KeyUserLdap}NotFound:{username}";
-    private readonly TimeSpan _expiration = TimeSpan.FromMinutes(15);
+        => $"NotFound:{username}";
 
     private readonly UserLdapService _userLdapService = new (ldapContext);
     /// <summary>
@@ -42,32 +37,29 @@ public sealed class AuthenticateLdapService(ILogger logger,
     /// Tên người dùng (tên đăng nhập) của người dùng.
     /// </param>
     /// <param name="password">Mật khẩu của người dùng.</param>
+    /// <param name="cancellationToken">Token hủy bỏ.</param>
     /// <returns>Kết quả xác thực người dùng LDAP.</returns>
-    public async Task<Result<UserLdap>> Authenticate(string username, string password)
+    public async Task<Result<UserLdap>> Authenticate(string username, string password, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
             throw new Exception("Tài khoản hoặc mật khẩu trống");
         }
-        var cacheKey = CacheKey(username, password);
+
         try
-        {
-            var userLdap = await hybridCache.GetOrCreateAsync(cacheKey,
-                _ => ValueTask.FromResult<UserLdap?>(null));
-            if (userLdap is not null)
-            {
-                return userLdap;
-            }
-            // Thực hiện xác thực
-            userLdap = await AuthenticateInLdap(username, password);
+        {   
             var cacheEntryOptions = new HybridCacheEntryOptions
             {
-                Expiration = _expiration,
+                Expiration = CacheSettings.UserLdapExpiration,
                 LocalCacheExpiration = TimeSpan.FromMinutes(5),
             }; 
-            _ = hybridCache.SetAsync(cacheKey, userLdap, cacheEntryOptions, tags:[userLdap.SamAccountName]).AsTask();
+            var userLdap = await AuthenticateInLdap(username, password, cancellationToken);
+            var cacheKey = CacheSettings.LdapUserKey(username);
+            List<string> tags = [userLdap.SamAccountName, userLdap.UserPrincipalName];
+            // Lưu Cache thông tin người dùng
+            _ = hybridCache.SetAsync(cacheKey, userLdap, cacheEntryOptions, tags, cancellationToken).AsTask();
             // Lưu Cache thông tin nhóm của người dùng
-            _ = groupLdapService.SetCacheAsync(userLdap);
+            _ = groupLdapService.SetCacheAsync(userLdap, cancellationToken);
             return userLdap;
         }
         catch (Exception e)
@@ -103,7 +95,7 @@ public sealed class AuthenticateLdapService(ILogger logger,
             logger.Warning(messenger);
             throw new Exception(messenger);
         }
-        _ = hybridCache.RemoveAsync(notFoundKey, cancellationToken).AsTask();
+        await hybridCache.RemoveAsync(notFoundKey, cancellationToken);
         var ldapConnectionInfo = ldapContext.LdapConnectionInfo;
         if (string.IsNullOrWhiteSpace(ldapConnectionInfo.Host) ||
             string.IsNullOrWhiteSpace(ldapConnectionInfo.DomainFullname) ||
@@ -119,7 +111,7 @@ public sealed class AuthenticateLdapService(ILogger logger,
             {
                 var cacheEntryOptions = new HybridCacheEntryOptions
                 {
-                    Expiration = TimeSpan.FromSeconds(30),
+                    Expiration = TimeSpan.FromSeconds(300),
                     LocalCacheExpiration = TimeSpan.FromSeconds(30),
                 }; 
                 _ = hybridCache.SetAsync(UserNotFoundKey(username), true, cacheEntryOptions, cancellationToken: cancellationToken).AsTask();

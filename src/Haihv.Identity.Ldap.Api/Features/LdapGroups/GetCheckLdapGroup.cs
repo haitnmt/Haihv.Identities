@@ -8,9 +8,9 @@ using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.LdapGroups;
 
-public static class CheckLdapGroup
+public static class GetCheckLdapGroup
 {
-    public record Query(string GroupName) : IRequest<bool>;
+    public record Query(string GroupName, bool ClearCache = false) : IRequest<bool>;
     public class Handler(
         IHttpContextAccessor httpContextAccessor,
         ILogger logger,
@@ -38,8 +38,7 @@ public static class CheckLdapGroup
             var key = CacheSettings.LdapGroupsKey(samAccountName);
             try
             {
-                var clearCache = httpContext.Request.Query["clearCache"].ToString().Equals("true", StringComparison.CurrentCultureIgnoreCase);
-                if (clearCache)
+                if (request.ClearCache)
                 {
                     await hybridCache.RemoveAsync(key, cancellationToken);
                 }
@@ -50,7 +49,8 @@ public static class CheckLdapGroup
                 return groups.Contains(request.GroupName);
             }
             catch(Exception ex){
-                logger.Error(ex,"{userPrincipalName} {dn} {groupName}", userPrincipalName,dn,request.GroupName);
+                logger.Error(ex,"Lỗi khi kiểm tra nhóm LDAP {samAccountName} {groupName}", 
+                    samAccountName,request.GroupName);
                 throw;
             }
         }
@@ -58,16 +58,18 @@ public static class CheckLdapGroup
         {
             public void AddRoutes(IEndpointRouteBuilder app)
             {
-                app.MapGet("/api/ldapGroup/check", async (ISender sender, string groupName) =>
+                app.MapGet("/api/ldapGroup/check", async (ISender sender, string groupName, bool clearCache = false) =>
                     {
                         try
                         {
-                            var response = await sender.Send(new Query(groupName));
-                            return response ? Results.Ok("Token hợp lệ!") : Results.Unauthorized();
+                            var response = await sender.Send(new Query(groupName, clearCache));
+                            return response ? Results.Ok(true) : Results.NoContent();
                         } 
                         catch (Exception e)
                         {
-                            return Results.BadRequest(e.Message);
+                            return e is UnauthorizedAccessException ? 
+                                Results.Unauthorized() : 
+                                Results.Problem(detail:e.Message);
                         }
                     })
                     .WithTags("LdapGroups")

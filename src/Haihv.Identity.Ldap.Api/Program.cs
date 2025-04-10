@@ -1,5 +1,5 @@
 using System.Text;
-using Haihv.Identity.Ldap.Api.Endpoints;
+using Carter;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Services;
@@ -30,10 +30,12 @@ builder.Services.AddSingleton<IAuthenticateLdapService,AuthenticateLdapService>(
 const string jwtSectionName = "JwtOptions";
 builder.AddJwtTokenOptions(jwtSectionName);
 builder.Services.AddSingleton<TokenProvider>();
-builder.Services.AddSingleton<IRefreshTokensService, RefreshTokensService>();
 
 // Add service for Check IP
 builder.Services.AddSingleton<ICheckIpService, CheckIpService>();
+
+// Add HttpContextAccessor
+builder.Services.AddHttpContextAccessor();
 
 // Add service Authentication and Authorization for Identity Server
 builder.Services.AddAuthorizationBuilder();
@@ -70,6 +72,9 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
+builder.Services.AddCarter();
 
 var app = builder.Build();
 
@@ -83,15 +88,13 @@ app.UseHttpsRedirection();
 
 // Use Cors
 app.UseCors();
-
-app.MapLoginEndpoints();
-app.MapUserEndpoints();
 // Thêm Endpoint kiểm tra ứng dụng hoạt động
-app.MapGet("/health", () => Results.Ok("OK")).WithName("GetHealth");
+app.MapGet("/health", () => Results.Ok("OK")).WithName("GetHealth").WithTags("Health");
 
 // Authentication and Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapCarter();
 
 app.Run();
 
