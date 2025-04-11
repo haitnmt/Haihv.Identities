@@ -36,6 +36,14 @@ public static class RefreshTokenExtensions
             return claim.Value;
         }
     }
+    
+    public static DateTimeOffset GetExpiryToken(this string refreshToken)
+    {
+        var handler = new JsonWebTokenHandler();
+        var jwt = handler.ReadJsonWebToken(refreshToken);
+        return jwt.ValidTo;
+    }
+    
     private static string SecretCacheKey(string samAccountName, string jti) => $"{samAccountName}:Secret:{jti}";
 
     private static async Task SetRefreshTokenAsync(this HybridCache hybridCache, string refreshToken)
