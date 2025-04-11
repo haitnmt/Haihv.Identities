@@ -8,7 +8,7 @@ using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.Login;
 
-public static class PostGetLogout
+public static class PostLogout
 {
     public record Query(bool All) : IRequest<bool>;
     public class Handler(
@@ -39,11 +39,13 @@ public static class PostGetLogout
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
-            app.MapGet("/api/logout/", async (ISender sender, bool all) =>
+            app.MapPost("/api/logout/", async (HttpContext httpContext, ISender sender, bool all) =>
                 {
                     try
                     {
                         var response = await sender.Send(new Query(all));
+                        // Xóa cookie cũ
+                        httpContext.Response.Cookies.Delete("refreshToken");
                         return response ? Results.Ok() : Results.Unauthorized();
                     } 
                     catch (Exception e)

@@ -6,9 +6,9 @@ using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Haihv.Identity.Ldap.Api.Extensions;
 
-public static class RefreshTokenExtensions
+public static class TokenExtensions
 {
-    private static (string Jti, string SamAccountName, string Secret, TimeSpan Expiry) DecodeRefreshToken(this string refreshToken)
+    public static (string Jti, string SamAccountName, string Secret, TimeSpan Expiry) DecodeToken(this string refreshToken)
     {
         var handler = new JsonWebTokenHandler();
         var jwt = handler.ReadJsonWebToken(refreshToken);
@@ -43,13 +43,11 @@ public static class RefreshTokenExtensions
         var jwt = handler.ReadJsonWebToken(refreshToken);
         return jwt.ValidTo;
     }
-    
-    private static string SecretCacheKey(string samAccountName, string jti) => $"{samAccountName}:Secret:{jti}";
 
-    private static async Task SetRefreshTokenAsync(this HybridCache hybridCache, string refreshToken)
+    public static async Task SetRefreshTokenAsync(this HybridCache hybridCache, string refreshToken)
     {
-        var (jti, samAccountName, secret, expiry) = refreshToken.DecodeRefreshToken();
-        var key = SecretCacheKey(samAccountName, jti);
+        var (jti, samAccountName, secret, expiry) = refreshToken.DecodeToken();
+        var key = CacheSettings.SecretCacheKey(samAccountName, jti);
         var cacheEntryOptions = new HybridCacheEntryOptions
         {
             Expiration = expiry,
@@ -59,33 +57,28 @@ public static class RefreshTokenExtensions
         await hybridCache.SetAsync(key, secret, cacheEntryOptions, tags);
     }
     
-    public static Task<string> GetAndSetRefreshTokenAsync(this HybridCache hybridCache, TokenProvider tokenProvider, string samAccountName)
+    public static async Task SetAccessTokenAsync(this HybridCache hybridCache, string accessToken)
     {
-        var refreshToken = tokenProvider.GenerateRefreshToken(samAccountName);
-        _ = hybridCache.SetRefreshTokenAsync(refreshToken);
-        return Task.FromResult(refreshToken);
+        var (jti, samAccountName, _, expiry) = accessToken.DecodeToken();
+        var key = CacheSettings.AccessTokenCacheKey(samAccountName);
+        var cacheEntryOptions = new HybridCacheEntryOptions
+        {
+            Expiration = expiry,
+            LocalCacheExpiration = TimeSpan.FromSeconds(30)
+        }; 
+        var tags = new[] { samAccountName, jti };
+        await hybridCache.SetAsync(key, jti, cacheEntryOptions, tags);
     }
-
-    private static async Task RemoveRefreshTokenAsync(this HybridCache hybridCache, string samAccountName, string jti)
+    
+    public static async Task RemoveRefreshTokenAsync(this HybridCache hybridCache, string samAccountName, string jti)
     {
-        var key = SecretCacheKey(samAccountName, jti);
+        var key = CacheSettings.SecretCacheKey(samAccountName, jti);
         await hybridCache.RemoveAsync(key);
     } 
 
-    private static async Task RemoveRefreshTokenAsync(this HybridCache hybridCache, string[] tags)
+    public static async Task RemoveRefreshTokenAsync(this HybridCache hybridCache, string[] tags)
     {
         await hybridCache.RemoveByTagAsync(tags);
     }
-    public static async Task<(string? RefreshToken, string? SamAccountName)> VerifyRefreshTokenAsync(this HybridCache hybridCache, TokenProvider tokenProvider, string refreshToken)
-    {
-        var (jti, samAccountName, secret, _) = refreshToken.DecodeRefreshToken();
-        var key = SecretCacheKey(samAccountName, jti);
-        var cachedSecret = await hybridCache.GetOrCreateAsync(key,
-            _ => ValueTask.FromResult<string?>(null)); 
-        var result = cachedSecret != null && cachedSecret == secret;
-        if (!result) return (null, samAccountName);
-        _ = hybridCache.RemoveRefreshTokenAsync(samAccountName, jti);  // Xóa refresh token cũ
-        _ = hybridCache.RemoveRefreshTokenAsync([samAccountName, jti]); // Xóa các tag liên quan đến refresh token cũ
-        return (await hybridCache.GetAndSetRefreshTokenAsync(tokenProvider, samAccountName), samAccountName);
-    }
+
 }

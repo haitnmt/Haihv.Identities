@@ -2,14 +2,17 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Haihv.Identity.Ldap.Api.Entities;
+using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Options;
+using Haihv.Identity.Ldap.Api.Settings;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Haihv.Identity.Ldap.Api.Services;
 
-public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
+public sealed class TokenProvider(IOptions<JwtTokenOptions> options, HybridCache hybridCache)
 {
     private readonly JwtTokenOptions _options = options.Value;
     public string GenerateAccessToken(UserLdap user)
@@ -44,10 +47,13 @@ public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
             Audience  = _options.Audience,
             SigningCredentials = credentials
         };
-
-        return tokenHandler.CreateToken(tokenDescriptor);
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        if (string.IsNullOrWhiteSpace(token))
+            _ = hybridCache.SetAccessTokenAsync(token);
+        return token; 
     }
-    public string GenerateRefreshToken(string samAccountName)
+
+    private string GenerateRefreshToken(string samAccountName)
     {
         var tokenHandler = new JsonWebTokenHandler();
         var claims = new[]
@@ -63,5 +69,22 @@ public sealed class TokenProvider(IOptions<JwtTokenOptions> options)
         };
         return tokenHandler.CreateToken(tokenDescriptor);
     }
-    
+    public async Task<(string? RefreshToken, string? SamAccountName)> VerifyRefreshTokenAsync(string refreshToken)
+    {
+        var (jti, samAccountName, secret, _) = refreshToken.DecodeToken();
+        var key = CacheSettings.SecretCacheKey(samAccountName, jti);
+        var cachedSecret = await hybridCache.GetOrCreateAsync(key,
+            _ => ValueTask.FromResult<string?>(null)); 
+        var result = cachedSecret != null && cachedSecret == secret;
+        if (!result) return (null, samAccountName);
+        _ = hybridCache.RemoveRefreshTokenAsync(samAccountName, jti);  // Xóa refresh token cũ
+        _ = hybridCache.RemoveRefreshTokenAsync([samAccountName, jti]); // Xóa các tag liên quan đến refresh token cũ
+        return (await GetAndSetRefreshTokenAsync(samAccountName), samAccountName);
+    }
+    public Task<string> GetAndSetRefreshTokenAsync(string samAccountName)
+    {
+        var refreshToken = GenerateRefreshToken(samAccountName);
+        _ = hybridCache.SetRefreshTokenAsync(refreshToken);
+        return Task.FromResult(refreshToken);
+    }
 }

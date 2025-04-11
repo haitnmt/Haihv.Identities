@@ -11,7 +11,7 @@ namespace Haihv.Identity.Ldap.Api.Features.Login;
 
 public static class PostRefreshToken
 {
-    public record Command(string RefreshToken) : IRequest<Response?>;
+    public record Query(string RefreshToken) : IRequest<Response?>;
     public record Response(string AccessToken, string RefreshToken);
 
     public class Handler(
@@ -20,9 +20,9 @@ public static class PostRefreshToken
         HybridCache hybridCache,
         ICheckIpService checkIpService,
         IUserLdapService userLdapService,
-        TokenProvider tokenProvider) : IRequestHandler<Command, Response?>
+        TokenProvider tokenProvider) : IRequestHandler<Query, Response?>
     {
-        public async Task<Response?> Handle(Command request, CancellationToken cancellationToken)
+        public async Task<Response?> Handle(Query request, CancellationToken cancellationToken)
         {
             var httpContext = httpContextAccessor.HttpContext 
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
@@ -33,7 +33,7 @@ public static class PostRefreshToken
                 logger.Warning("{ClientIp} đang bị khóa do cung cấp thông tin không chính xác!", ipInfo.IpAddress);
                 throw new Exception($"Bạn đã nhập sai quá nhiều lần! Vui lòng thử lại sau {exprSecond} giây.");
             }
-            var (refreshToken, samAccountName) = await hybridCache.VerifyRefreshTokenAsync(tokenProvider, request.RefreshToken);
+            var (refreshToken, samAccountName) = await TokenProvider.VerifyRefreshTokenAsync(request.RefreshToken);
             if (string.IsNullOrWhiteSpace(refreshToken) || string.IsNullOrWhiteSpace(samAccountName))
             {
                 logger.Error("Thông tin không hợp lệ: {ClientIp}", ipInfo.IpAddress);
@@ -80,12 +80,28 @@ public static class PostRefreshToken
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
-            app.MapPost("/api/refreshToken", async (ISender sender, Command command) =>
+            app.MapPost("/api/refreshToken", async (HttpContext httpContext, ISender sender) =>
             {
                 try
                 {
-                    var response = await sender.Send(command);
-                    return Results.Ok(response);
+                    // Lấy refresh token từ cookie
+                    var refreshToken = httpContext.Request.Cookies["refreshToken"];
+                    if (string.IsNullOrEmpty(refreshToken)) return Results.Unauthorized();
+                    var response = await sender.Send(new Query(refreshToken));
+                    if (response is null) return Results.NotFound();
+                    // Xóa cookie cũ
+                    httpContext.Response.Cookies.Delete("refreshToken");
+                    // Ghi cookie mới
+                    httpContext.Response.Cookies.Append("refreshToken", response.RefreshToken, new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Secure = true,
+                        SameSite = SameSiteMode.None, // Thay đổi từ Strict sang None để hoạt động với CORS
+                        Path = "/api/",
+                        IsEssential = true,
+                        Expires = response.RefreshToken.GetExpiryToken()
+                    });
+                    return Results.Ok(response.AccessToken);
                 }
                 catch (Exception e)
                 {

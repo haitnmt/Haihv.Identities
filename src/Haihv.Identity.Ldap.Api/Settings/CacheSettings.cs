@@ -8,7 +8,8 @@ public static class CacheSettings
     public static string LdapGroupsKey(string samAccountName) => $"{samAccountName}:LdapGroups"; 
     public static readonly TimeSpan UserLdapExpiration = TimeSpan.FromDays(1);
     public static string LogoutTime(string samAccountName) => $"{samAccountName}:LogoutTime";
-    
+    public static string SecretCacheKey(string samAccountName, string jti) => $"{samAccountName}:Secret:{jti}";
+    public static string AccessTokenCacheKey(string samAccountName) => $"{samAccountName}:AccessToken";
     public static Task ClearLogoutTimeAsync(this HybridCache hybridCache, string samAccountName)
     {
         var key = LogoutTime(samAccountName);

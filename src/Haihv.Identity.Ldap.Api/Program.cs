@@ -6,9 +6,11 @@ using Haihv.Identity.Ldap.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
+
 var builder = WebApplication.CreateBuilder(args);
 // Set Console Support Vietnamese
 Console.OutputEncoding = Encoding.UTF8;
+
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -61,15 +63,30 @@ builder.Services.AddAuthentication(options =>
 var frontendUrls = builder.Configuration.GetSection("FrontendUrl").Get<string[]>();
 if (frontendUrls is null || frontendUrls.Length == 0)
 {
-    frontendUrls = ["*"];
+    // Không thể sử dụng wildcard "*" với AllowCredentials()
+    // Nếu không có URL cụ thể, sử dụng localhost mặc định
+    frontendUrls = ["http://localhost:5167", "https://localhost:7063"];
 }
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(corsPolicyBuilder =>
     {
-        corsPolicyBuilder.WithOrigins(frontendUrls)
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        // Kiểm tra xem có wildcard "*" trong danh sách không
+        if (frontendUrls.Contains("*"))
+        {
+            // Nếu có wildcard, không sử dụng AllowCredentials
+            corsPolicyBuilder.AllowAnyOrigin()
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+        else
+        {
+            // Nếu không có wildcard, sử dụng AllowCredentials
+            corsPolicyBuilder.WithOrigins(frontendUrls)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
     });
 });
 builder.Services.AddMediatR(cfg =>

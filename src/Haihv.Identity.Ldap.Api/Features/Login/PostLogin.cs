@@ -74,7 +74,7 @@ public static class PostLogin
                     }
 
                     // Tạo refresh token
-                    var refreshToken = hybridCache.GetAndSetRefreshTokenAsync(tokenProvider, samAccountName).Result;
+                    var refreshToken = TokenProvider.GetAndSetRefreshTokenAsync(samAccountName).Result;
                     sw.Stop();
                     elapsed = sw.ElapsedMilliseconds;
                     if (elapsed > 1000)
@@ -118,12 +118,25 @@ public static class PostLogin
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
-            app.MapPost("/api/login", async (ISender sender, Command command) =>
+            app.MapPost("/api/login", async (HttpContext httpContext, ISender sender, Command command) =>
                 {
                     try
                     {
                         var response = await sender.Send(command);
-                        return Results.Ok(response);
+                        if (!string.IsNullOrWhiteSpace(response.RefreshToken))
+                        {
+                            // Ghi cookie mới
+                            httpContext.Response.Cookies.Append("refreshToken", response.RefreshToken, new CookieOptions
+                            {
+                                HttpOnly = true,
+                                Secure = true,
+                                SameSite = SameSiteMode.None, // Thay đổi từ Strict sang None để hoạt động với CORS
+                                Path = "/api/",
+                                IsEssential = true,
+                                Expires = response.RefreshToken.GetExpiryToken()
+                            });
+                        }
+                        return Results.Ok(response.AccessToken);
                     }
                     catch (Exception e)
                     {
