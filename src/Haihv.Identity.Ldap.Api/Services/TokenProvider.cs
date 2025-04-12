@@ -53,7 +53,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         }
     }
     
-    public string GenerateAccessToken(UserLdap user)
+    public async Task<string> GenerateAccessToken(UserLdap user)
     {
         var jti = Guid.CreateVersion7().ToString();
         var samAccountName = user.SamAccountName;
@@ -93,11 +93,11 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         }; 
         var token = tokenHandler.CreateToken(tokenDescriptor);
         // Lưu vào hybrid cache để kiểm tra khi verify access token
-        hybridCache.SetAsync(key, true, cacheEntryOptions, [samAccountName, jti]).AsTask();
+        await hybridCache.SetAsync(key, true, cacheEntryOptions, [samAccountName, jti]);
         return token; 
     }
     
-    public string GenerateRefreshToken(string samAccountName)
+    public async Task<string> GenerateRefreshToken(string samAccountName)
     {
         var tokenHandler = new JsonWebTokenHandler();
         var jti = Guid.CreateVersion7().ToString();
@@ -120,7 +120,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
             Expiration = TimeSpan.FromDays(_options.ExpireRefreshTokenDays),
             LocalCacheExpiration = TimeSpan.FromHours(1)
         }; 
-       hybridCache.SetAsync(key, secret, cacheEntryOptions, [samAccountName, jti]).AsTask();
+        await hybridCache.SetAsync(key, secret, cacheEntryOptions, [samAccountName, jti]);
         return tokenHandler.CreateToken(tokenDescriptor);
     }
     
@@ -146,7 +146,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         var result = cachedSecret != null && cachedSecret == secret;
         if (!result) return (null, samAccountName);
         _ = RemoveTokenByJtiAsync(jti);  // Xóa refresh token cũ
-        return (GenerateRefreshToken(samAccountName), samAccountName);
+        return (await GenerateRefreshToken(samAccountName), samAccountName);
     }
     
     public async Task<bool> VerifyAccessToken(string? accessToken, CancellationToken cancellationToken = default)
@@ -163,13 +163,13 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
             cancellationToken: cancellationToken);
         
     }
-    public void RemoveTokenAsync(string? token, bool all = false, CancellationToken cancellationToken = default)
+    public async Task RemoveTokenAsync(string? token, bool all = false, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token)) 
             return;
         var (jti, samAccountName, _) = DecodeToken(token);
         List<string> tags = all ? [samAccountName, jti] : [jti];
-        _ = hybridCache.RemoveByTagAsync(tags, cancellationToken).AsTask();
+        await hybridCache.RemoveByTagAsync(tags, cancellationToken).AsTask();
     }
 }
 

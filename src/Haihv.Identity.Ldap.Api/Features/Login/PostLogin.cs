@@ -4,7 +4,6 @@ using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Services;
 using MediatR;
-using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.Login;
@@ -15,7 +14,6 @@ public static class PostLogin
     
     public class Handler(IHttpContextAccessor httpContextAccessor, 
         ILogger logger,
-        HybridCache hybridCache,
         ICheckIpService checkIpService,
         IAuthenticateLdapService authenticateLdapService, 
         TokenProvider tokenProvider) : IRequestHandler<Command, string?>
@@ -33,23 +31,21 @@ public static class PostLogin
                 throw new IpLockedException(exprSecond);
             }
             var sw = Stopwatch.StartNew();
-            const string errorMessage = "Thông tin đăng nhập không chính xác!";
-            
+
             var userResult = await authenticateLdapService.Authenticate(username, request.Password, cancellationToken);
 
-            return userResult.Match<string?>(userLdap =>
+            return await userResult.Match<Task<string?>>(async userLdap =>
                 {
                     var samAccountName = userLdap.SamAccountName;
                     // Tạo token
                     var accessToken = tokenProvider.GenerateAccessToken(userLdap);
                     // Xoá lock IP
                     if (!ipInfo.IsPrivate)
-                        _ = checkIpService.ClearLockAsync(ipInfo.IpAddress);
-                    string? refreshToken = null;
+                        await checkIpService.ClearLockAsync(ipInfo.IpAddress);
                     if (request.RememberMe)
                     {
                         // Tạo refresh token
-                        refreshToken = tokenProvider.GenerateRefreshToken(samAccountName);
+                        var refreshToken = await tokenProvider.GenerateRefreshToken(samAccountName);
                         // Ghi cookie mới
                         httpContext.Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions
                         {
@@ -79,7 +75,7 @@ public static class PostLogin
                             ipInfo);
                     }
 
-                    return accessToken; 
+                    return await accessToken; 
                 },
                 ex =>
                 {
@@ -94,7 +90,7 @@ public static class PostLogin
                         throw new InvalidCredentialsException(0, ex);
                     }
 
-                    checkIpService.SetLockAsync(ipInfo.IpAddress);
+                    _ = checkIpService.SetLockAsync(ipInfo.IpAddress);
                     throw new InvalidCredentialsException(3 - count, ex);
                 }
             );
@@ -105,7 +101,7 @@ public static class PostLogin
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
-            app.MapPost("/api/login", async (HttpContext httpContext, ISender sender, Command command) =>
+            app.MapPost("/api/login", async (ISender sender, Command command) =>
                 {
                     // Không cần try-catch ở đây vì đã có middleware xử lý exception toàn cục
                     var response = await sender.Send(command);

@@ -90,7 +90,7 @@ public static class PostRefreshToken
                 IsEssential = true,
                 Expires = refreshToken.GetExpiryToken()
             });
-            return accessToken;
+            return await accessToken;
         }
     }
     public class Endpoint : ICarterModule

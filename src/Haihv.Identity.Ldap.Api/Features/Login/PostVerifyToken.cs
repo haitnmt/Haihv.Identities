@@ -1,4 +1,5 @@
 using Carter;
+using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Services;
 using MediatR;
 
@@ -18,7 +19,9 @@ public static class PostVerifyToken
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
             // Lấy thông tin đăng nhập từ context header Bearer token
             var accessToken =  httpContext.Request.Headers.Authorization.ToString().Replace("Bearer ", "");
-            return await tokenProvider.VerifyAccessToken(accessToken, cancellationToken);
+            if (!await tokenProvider.VerifyAccessToken(accessToken, cancellationToken))
+                throw new InvalidTokenException("Token không hợp lệ");
+            return true;
         }
     }
     public class Endpoint : ICarterModule

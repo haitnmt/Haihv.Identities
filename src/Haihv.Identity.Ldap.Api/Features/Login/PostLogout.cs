@@ -1,5 +1,4 @@
 using Carter;
-using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Services;
 using MediatR;
@@ -16,7 +15,7 @@ public static class PostLogout
         ILogger logger,
         TokenProvider tokenProvider) : IRequestHandler<Query, bool>
     {
-        public Task<bool> Handle(Query request, CancellationToken cancellationToken)
+        public async Task<bool> Handle(Query request, CancellationToken cancellationToken)
         {
             var httpContext = httpContextAccessor.HttpContext
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
@@ -28,8 +27,8 @@ public static class PostLogout
             if (request.All)
             {
                 // Xóa tất cả token trong hybrid cache
-                tokenProvider.RemoveTokenAsync(refreshToken, true, cancellationToken);
-                tokenProvider.RemoveTokenAsync(accessToken, true, cancellationToken);
+                await tokenProvider.RemoveTokenAsync(refreshToken, true, cancellationToken);
+                await tokenProvider.RemoveTokenAsync(accessToken, true, cancellationToken);
                 logger.Information("Đăng xuất tất cả các thiết bị thành công! {ipAddr} {UserPrincipalName}",
                     ipAddr,
                     httpContext.GetDistinguishedName());
@@ -37,8 +36,8 @@ public static class PostLogout
             else
             {
                 // Xóa token trong hybrid cache
-                tokenProvider.RemoveTokenAsync(accessToken, cancellationToken: cancellationToken);
-                tokenProvider.RemoveTokenAsync(refreshToken, cancellationToken: cancellationToken);
+                await tokenProvider.RemoveTokenAsync(accessToken, cancellationToken: cancellationToken);
+                await tokenProvider.RemoveTokenAsync(refreshToken, cancellationToken: cancellationToken);
                 logger.Information("Đăng xuất thành công! {ipAddr} {UserPrincipalName}",
                     ipAddr,
                     httpContext.GetDistinguishedName());
@@ -52,7 +51,7 @@ public static class PostLogout
                 Path = "/api/", // Phải giống với khi tạo cookie
                 IsEssential = true
             });
-            return Task.FromResult(true);
+            return true;
         }
     }
     public class Endpoint : ICarterModule
