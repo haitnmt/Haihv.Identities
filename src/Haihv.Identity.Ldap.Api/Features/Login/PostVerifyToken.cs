@@ -1,8 +1,6 @@
 using Carter;
-using Haihv.Identity.Ldap.Api.Extensions;
+using Haihv.Identity.Ldap.Api.Services;
 using MediatR;
-using Microsoft.Extensions.Caching.Hybrid;
-using ILogger = Serilog.ILogger;
 
 namespace Haihv.Identity.Ldap.Api.Features.Login;
 
@@ -12,14 +10,15 @@ public static class PostVerifyToken
 
     public class Handler(
         IHttpContextAccessor httpContextAccessor,
-        ILogger logger,
-        HybridCache hybridCache) : IRequestHandler<Query, bool>
+        TokenProvider tokenProvider) : IRequestHandler<Query, bool>
     {
         public async Task<bool> Handle(Query request, CancellationToken cancellationToken)
         {
             var httpContext = httpContextAccessor.HttpContext
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
-            return await httpContext.VerifyToken(hybridCache, logger, cancellationToken);
+            // Lấy thông tin đăng nhập từ context header Bearer token
+            var accessToken =  httpContext.Request.Headers.Authorization.ToString().Replace("Bearer ", "");
+            return await tokenProvider.VerifyAccessToken(accessToken, cancellationToken);
         }
     }
     public class Endpoint : ICarterModule

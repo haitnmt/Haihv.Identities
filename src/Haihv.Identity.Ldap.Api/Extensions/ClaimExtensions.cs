@@ -23,24 +23,5 @@ public static class ClaimExtensions
 
     private static long GetExpiry(this HttpContext context)
         => long.TryParse(context.GetClaimValue(JwtRegisteredClaimNames.Exp), out var exp) ? exp : 0;
-   
-    public static async Task<bool> VerifyToken(this HttpContext httpContext, 
-        HybridCache hybridCache, 
-        ILogger logger, 
-        CancellationToken cancellationToken = default)
-    {
-        var samAccountName = httpContext.GetSamAccountName();
-        var ipAddr = httpContext.GetIpInfo().IpAddress;
-        // Kiểm tra thông tin token
-        var exp = await hybridCache.GetOrCreateAsync(CacheSettings.LogoutTime(samAccountName),
-            _ => new ValueTask<long>(0L),
-            cancellationToken: cancellationToken);
-        if (exp <= 0 || httpContext.GetExpiry() <= exp)
-        {
-            logger.Information("Token hợp lệ! {ipAddr} {SamAccountName}", ipAddr, samAccountName);
-            return true;
-        }
-        logger.Warning("Token đã hết hạn! {ipAddr} {SamAccountName}", ipAddr, samAccountName);
-        return false;
-    }
+    
 }

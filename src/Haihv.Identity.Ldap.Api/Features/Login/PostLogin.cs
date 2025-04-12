@@ -2,7 +2,6 @@ using System.Diagnostics;
 using Carter;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Services;
-using Haihv.Identity.Ldap.Api.Settings;
 using MediatR;
 using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
@@ -41,42 +40,21 @@ public static class PostLogin
 
             return userResult.Match<Response>(userLdap =>
                 {
-                    long elapsed;
-
                     var samAccountName = userLdap.SamAccountName;
                     // Tạo token
                     var accessToken = tokenProvider.GenerateAccessToken(userLdap);
-                    // Xóa thời gian đăng xuất
-                    _ = hybridCache.ClearLogoutTimeAsync(samAccountName);
                     // Xoá lock IP
                     if (!ipInfo.IsPrivate)
                         _ = checkIpService.ClearLockAsync(ipInfo.IpAddress);
-                    if (!request.RememberMe)
+                    string? refreshToken = null;
+                    if (request.RememberMe)
                     {
-                        sw.Stop();
-                        elapsed = sw.ElapsedMilliseconds;
-                        if (elapsed > 1000)
-                        {
-                            logger.Warning("Đăng nhập thành công: [{Elapsed} ms] {Username} {ClientIp}",
-                                elapsed,
-                                samAccountName,
-                                ipInfo);
-                        }
-                        else
-                        {
-                            logger.Information("Đăng nhập thành công: [{Elapsed} ms] {Username} {ClientIp}",
-                                elapsed,
-                                samAccountName,
-                                ipInfo);
-                        }
-
-                        return new Response(accessToken, null);
+                        // Tạo refresh token
+                        refreshToken = tokenProvider.GenerateRefreshToken(samAccountName);
                     }
-
-                    // Tạo refresh token
-                    var refreshToken = TokenProvider.GetAndSetRefreshTokenAsync(samAccountName).Result;
+                    
                     sw.Stop();
-                    elapsed = sw.ElapsedMilliseconds;
+                    var elapsed = sw.ElapsedMilliseconds;
                     if (elapsed > 1000)
                     {
                         logger.Warning("Đăng nhập thành công: [{Elapsed} ms] {Username} {ClientIp}",

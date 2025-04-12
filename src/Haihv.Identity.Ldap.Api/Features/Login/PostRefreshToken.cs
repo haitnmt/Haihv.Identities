@@ -11,8 +11,7 @@ namespace Haihv.Identity.Ldap.Api.Features.Login;
 
 public static class PostRefreshToken
 {
-    public record Query(string RefreshToken) : IRequest<Response?>;
-    public record Response(string AccessToken, string RefreshToken);
+    public record Query: IRequest<string?>;
 
     public class Handler(
         IHttpContextAccessor httpContextAccessor,
@@ -20,9 +19,9 @@ public static class PostRefreshToken
         HybridCache hybridCache,
         ICheckIpService checkIpService,
         IUserLdapService userLdapService,
-        TokenProvider tokenProvider) : IRequestHandler<Query, Response?>
+        TokenProvider tokenProvider) : IRequestHandler<Query, string?>
     {
-        public async Task<Response?> Handle(Query request, CancellationToken cancellationToken)
+        public async Task<string?> Handle(Query request, CancellationToken cancellationToken)
         {
             var httpContext = httpContextAccessor.HttpContext 
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
@@ -33,7 +32,14 @@ public static class PostRefreshToken
                 logger.Warning("{ClientIp} đang bị khóa do cung cấp thông tin không chính xác!", ipInfo.IpAddress);
                 throw new Exception($"Bạn đã nhập sai quá nhiều lần! Vui lòng thử lại sau {exprSecond} giây.");
             }
-            var (refreshToken, samAccountName) = await TokenProvider.VerifyRefreshTokenAsync(request.RefreshToken);
+            // Lấy refresh token từ cookie
+            var refreshToken = httpContext.Request.Cookies["refreshToken"];
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                logger.Error("Không tìm thấy refresh token trong cookie của client: {ClientIp}", ipInfo.IpAddress);
+                throw new UnauthorizedAccessException();
+            }
+            (refreshToken, var samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshToken);
             if (string.IsNullOrWhiteSpace(refreshToken) || string.IsNullOrWhiteSpace(samAccountName))
             {
                 logger.Error("Thông tin không hợp lệ: {ClientIp}", ipInfo.IpAddress);
@@ -73,39 +79,39 @@ public static class PostRefreshToken
                 throw new Exception($"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}");
             }
             var accessToken = tokenProvider.GenerateAccessToken(userLdap);
-            return new Response (accessToken, refreshToken);
+            // Xóa cookie cũ
+            httpContext.Response.Cookies.Delete("refreshToken");
+            // Ghi cookie mới
+            httpContext.Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None, // Thay đổi từ Strict sang None để hoạt động với CORS
+                Path = "/api/",
+                IsEssential = true,
+                Expires = refreshToken.GetExpiryToken()
+            });
+            return accessToken;
         }
     }
     public class Endpoint : ICarterModule
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
-            app.MapPost("/api/refreshToken", async (HttpContext httpContext, ISender sender) =>
+            app.MapPost("/api/refreshToken", async (ISender sender) =>
             {
                 try
                 {
-                    // Lấy refresh token từ cookie
-                    var refreshToken = httpContext.Request.Cookies["refreshToken"];
-                    if (string.IsNullOrEmpty(refreshToken)) return Results.Unauthorized();
-                    var response = await sender.Send(new Query(refreshToken));
-                    if (response is null) return Results.NotFound();
-                    // Xóa cookie cũ
-                    httpContext.Response.Cookies.Delete("refreshToken");
-                    // Ghi cookie mới
-                    httpContext.Response.Cookies.Append("refreshToken", response.RefreshToken, new CookieOptions
-                    {
-                        HttpOnly = true,
-                        Secure = true,
-                        SameSite = SameSiteMode.None, // Thay đổi từ Strict sang None để hoạt động với CORS
-                        Path = "/api/",
-                        IsEssential = true,
-                        Expires = response.RefreshToken.GetExpiryToken()
-                    });
-                    return Results.Ok(response.AccessToken);
+                    var response = await sender.Send(new Query());
+                    return string.IsNullOrWhiteSpace(response) ? 
+                        Results.NotFound() : 
+                        Results.Ok(response);
                 }
                 catch (Exception e)
                 {
-                    return Results.BadRequest(e.Message);
+                    return e is UnauthorizedAccessException ? 
+                        Results.Unauthorized() : 
+                        Results.BadRequest(e.Message);
                 }
 
             }).WithTags("Login");

@@ -1,8 +1,7 @@
 using Carter;
 using Haihv.Identity.Ldap.Api.Extensions;
-using Haihv.Identity.Ldap.Api.Settings;
+using Haihv.Identity.Ldap.Api.Services;
 using MediatR;
-using Microsoft.Extensions.Caching.Hybrid;
 using ILogger = Serilog.ILogger;
 
 
@@ -14,47 +13,64 @@ public static class PostLogout
     public class Handler(
         IHttpContextAccessor httpContextAccessor,
         ILogger logger,
-        HybridCache hybridCache) : IRequestHandler<Query, bool>
+        TokenProvider tokenProvider) : IRequestHandler<Query, bool>
     {
-        public async Task<bool> Handle(Query request, CancellationToken cancellationToken)
+        public Task<bool> Handle(Query request, CancellationToken cancellationToken)
         {
             var httpContext = httpContextAccessor.HttpContext
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
-            var samAccountName = httpContext.GetSamAccountName();
+            // Lấy thông tin đăng nhập từ context header Bearer token
+            var accessToken =  httpContext.Request.Headers.Authorization.ToString().Replace("Bearer ", "");
+            // Lấy refresh token từ cookie
+            var refreshToken = httpContext.Request.Cookies["refreshToken"];
             var ipAddr = httpContext.GetIpInfo().IpAddress;
             if (request.All)
             {
-                var key = CacheSettings.LogoutTime(samAccountName);
-                await hybridCache.SetAsync(key, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), cancellationToken: cancellationToken);
+                // Xóa tất cả token trong hybrid cache
+                tokenProvider.RemoveTokenAsync(refreshToken, true, cancellationToken);
+                tokenProvider.RemoveTokenAsync(accessToken, true, cancellationToken);
+                logger.Information("Đăng xuất tất cả các thiết bị thành công! {ipAddr} {UserPrincipalName}",
+                    ipAddr,
+                    httpContext.GetDistinguishedName());
             }
-            List<string> tags = [samAccountName, httpContext.GetUsername(), httpContext.GetUserPrincipalName()];
-            _ = hybridCache.RemoveByTagAsync(tags.Distinct(), cancellationToken).AsTask();
-            logger.Information("Đăng xuất thành công! {ipAddr} {UserPrincipalName}",
-                ipAddr,
-                httpContext.GetDistinguishedName());
-            return true;
+            else
+            {
+                // Xóa token trong hybrid cache
+                tokenProvider.RemoveTokenAsync(accessToken, cancellationToken: cancellationToken);
+                tokenProvider.RemoveTokenAsync(refreshToken, cancellationToken: cancellationToken);
+                logger.Information("Đăng xuất thành công! {ipAddr} {UserPrincipalName}",
+                    ipAddr,
+                    httpContext.GetDistinguishedName());
+            }
+            // Xóa cookie cũ - phải đảm bảo các thuộc tính giống với khi tạo cookie
+            httpContext.Response.Cookies.Delete("refreshToken", new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None, // Phải giống với khi tạo cookie
+                Path = "/api/", // Phải giống với khi tạo cookie
+                IsEssential = true
+            });
+            return Task.FromResult(true);
         }
     }
     public class Endpoint : ICarterModule
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
-            app.MapPost("/api/logout/", async (HttpContext httpContext, ISender sender, bool all) =>
+            app.MapPost("/api/logout/", async (ISender sender, bool all = false) =>
                 {
                     try
                     {
                         var response = await sender.Send(new Query(all));
-                        // Xóa cookie cũ
-                        httpContext.Response.Cookies.Delete("refreshToken");
                         return response ? Results.Ok() : Results.Unauthorized();
-                    } 
+                    }
                     catch (Exception e)
                     {
                         return Results.BadRequest(e.Message);
                     }
                 })
-                .WithTags("Login")
-                .RequireAuthorization();
+                .WithTags("Login");
         }
     }
 }

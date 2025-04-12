@@ -6,8 +6,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
 		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 		<Copyright>vpdkbacninh.vn | haihv.vn</Copyright>
-        <AssemblyVersion>2025.04.10</AssemblyVersion>
-        <FileVersion>2025.04.10</FileVersion>
+        <AssemblyVersion>2025.04.12</AssemblyVersion>
+        <FileVersion>2025.04.12</FileVersion>
         <NeutralLanguage>vi-VN</NeutralLanguage>
     </PropertyGroup>
 
@@ -16,15 +16,15 @@
         <PackageReference Include="Elastic.Serilog.Sinks" Version="8.12.3" />
         <PackageReference Include="LanguageExt.Core" Version="4.4.9" />
         <PackageReference Include="MediatR" Version="12.5.0" />
-        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.3" />
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.3" />
-        <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="9.3.0" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.4" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.4" />
+        <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="9.4.0" />
         <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.2" />
-        <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.6.1" />
+        <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.8.0" />
         <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
         <PackageReference Include="Serilog.Extensions" Version="8.0.3" />
         <PackageReference Include="Serilog.Settings.Configuration" Version="9.0.0" />
-        <PackageReference Include="System.DirectoryServices.Protocols" Version="9.0.3" />
+        <PackageReference Include="System.DirectoryServices.Protocols" Version="9.0.4" />
     </ItemGroup>
 
 </Project>

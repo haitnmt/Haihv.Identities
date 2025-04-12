@@ -1,6 +1,7 @@
 using Carter;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
+using Haihv.Identity.Ldap.Api.Services;
 using Haihv.Identity.Ldap.Api.Settings;
 using MediatR;
 using Microsoft.Extensions.Caching.Hybrid;
@@ -15,6 +16,7 @@ public static class GetCheckLdapGroup
         IHttpContextAccessor httpContextAccessor,
         ILogger logger,
         HybridCache hybridCache,
+        TokenProvider tokenProvider,
         IGroupLdapService groupLdapService) : IRequestHandler<Query, bool>
     {
 
@@ -22,10 +24,11 @@ public static class GetCheckLdapGroup
         {
             var httpContext = httpContextAccessor.HttpContext
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
-            if (!await httpContext.VerifyToken(hybridCache, logger, cancellationToken: cancellationToken))
-            {
-                throw new UnauthorizedAccessException();
-            }
+            // Lấy thông tin đăng nhập từ context header Bearer token
+            var accessToken =  httpContext.Request.Headers.Authorization.ToString().Replace("Bearer ", "");
+            // Kiểm tra AccessToken có hợp lệ hay không?
+            if (!await tokenProvider.VerifyAccessToken(accessToken, cancellationToken))
+                return false;
             var dn = httpContext.GetDistinguishedName();
             var userPrincipalName = httpContext.GetUserPrincipalName();
             var samAccountName = httpContext.GetSamAccountName();
