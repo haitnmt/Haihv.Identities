@@ -1,4 +1,5 @@
 using Carter;
+using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Services;
@@ -30,26 +31,25 @@ public static class PostRefreshToken
             if (exprSecond > 0)
             {
                 logger.Warning("{ClientIp} đang bị khóa do cung cấp thông tin không chính xác!", ipInfo.IpAddress);
-                throw new Exception($"Bạn đã nhập sai quá nhiều lần! Vui lòng thử lại sau {exprSecond} giây.");
+                throw new IpLockedException(exprSecond);
             }
             // Lấy refresh token từ cookie
             var refreshToken = httpContext.Request.Cookies["refreshToken"];
             if (string.IsNullOrEmpty(refreshToken))
             {
                 logger.Error("Không tìm thấy refresh token trong cookie của client: {ClientIp}", ipInfo.IpAddress);
-                throw new UnauthorizedAccessException();
+                throw new InvalidTokenException("Refresh token không tồn tại");
             }
             (refreshToken, var samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshToken);
             if (string.IsNullOrWhiteSpace(refreshToken) || string.IsNullOrWhiteSpace(samAccountName))
             {
                 logger.Error("Thông tin không hợp lệ: {ClientIp}", ipInfo.IpAddress);
-                const string errorMessage = "Thông tin không hợp lệ";
                 if (ipInfo.IsPrivate)
                 {
-                    throw new Exception(errorMessage);
+                    throw new InvalidTokenException("Token không hợp lệ");
                 }
                 _ = checkIpService.SetLockAsync(ipInfo.IpAddress);
-                throw new Exception($"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}");
+                throw new InvalidCredentialsException(3 - count);
             }
 
             var cacheKey = CacheSettings.LdapUserKey(samAccountName);
@@ -70,13 +70,12 @@ public static class PostRefreshToken
             if (userLdap == null)
             {
                 logger.Error("Không tìm thấy người dùng với SamAccountName: {SamAccountName}", samAccountName);
-                const string errorMessage = "Tài khoản không tồn tại";
                 if (ipInfo.IsPrivate)
                 {
-                    throw new Exception(errorMessage);
+                    throw new UserNotFoundException(samAccountName);
                 }
                 _ = checkIpService.SetLockAsync(ipInfo.IpAddress);
-                throw new Exception($"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}");
+                throw new InvalidCredentialsException(3 - count);
             }
             var accessToken = tokenProvider.GenerateAccessToken(userLdap);
             // Xóa cookie cũ
@@ -100,20 +99,11 @@ public static class PostRefreshToken
         {
             app.MapPost("/api/refreshToken", async (ISender sender) =>
             {
-                try
-                {
-                    var response = await sender.Send(new Query());
-                    return string.IsNullOrWhiteSpace(response) ? 
-                        Results.NotFound() : 
-                        Results.Ok(response);
-                }
-                catch (Exception e)
-                {
-                    return e is UnauthorizedAccessException ? 
-                        Results.Unauthorized() : 
-                        Results.BadRequest(e.Message);
-                }
-
+                // Không cần try-catch ở đây vì đã có middleware xử lý exception toàn cục
+                var response = await sender.Send(new Query());
+                return string.IsNullOrWhiteSpace(response) ? 
+                    Results.NotFound() : 
+                    Results.Ok(response);
             }).WithTags("Login");
         }
     }

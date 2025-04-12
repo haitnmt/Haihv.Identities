@@ -1,5 +1,6 @@
 using System.DirectoryServices.Protocols;
 using Haihv.Identity.Ldap.Api.Entities;
+using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Settings;
 using LanguageExt.Common;
@@ -43,7 +44,7 @@ public sealed class AuthenticateLdapService(ILogger logger,
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
-            throw new Exception("Tài khoản hoặc mật khẩu trống");
+            return new Result<UserLdap>(new InvalidCredentialsException(0, new ArgumentException("Tài khoản hoặc mật khẩu trống")));
         }
 
         try
@@ -65,7 +66,18 @@ public sealed class AuthenticateLdapService(ILogger logger,
         catch (Exception e)
         {
             logger.Error(e, "Lỗi xác thực người dùng LDAP");
-            return new Result<UserLdap>(e);
+            
+            // Chuyển đổi các exception thông thường thành LdapApiException
+            var apiException = e switch
+            {
+                UserNotFoundException => e,
+                LdapApiException => e,
+                LdapException { ErrorCode: 49 } ldapEx => new InvalidCredentialsException(0, ldapEx),
+                LdapException => new LdapConfigurationException("Lỗi kết nối đến máy chủ LDAP", e),
+                _ => new AuthenticationException("Lỗi xác thực người dùng LDAP", e)
+            };
+            
+            return new Result<UserLdap>(apiException);
         }
     }
     
@@ -84,16 +96,15 @@ public sealed class AuthenticateLdapService(ILogger logger,
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
-            throw new Exception("Tài khoản hoặc mật khẩu trống");
+            throw new InvalidCredentialsException(0, new ArgumentException("Tài khoản hoặc mật khẩu trống"));
         }
         var notFoundKey = UserNotFoundKey(username);
         var notFound = await hybridCache.GetOrCreateAsync(notFoundKey,
             _ => new ValueTask<bool>(false), cancellationToken: cancellationToken);
         if (notFound)
         {
-            var messenger = $"Người dùng không tồn tại [{username}]";
-            logger.Warning(messenger);
-            throw new Exception(messenger);
+            logger.Warning("Người dùng không tồn tại [{Username}]", username);
+            throw new UserNotFoundException(username);
         }
         await hybridCache.RemoveAsync(notFoundKey, cancellationToken);
         var ldapConnectionInfo = ldapContext.LdapConnectionInfo;
@@ -102,7 +113,7 @@ public sealed class AuthenticateLdapService(ILogger logger,
             string.IsNullOrWhiteSpace(ldapConnectionInfo.Domain))
         {
             logger.Error("Cấu hình Ldap không hợp lệ {LdapConnectionInfo}", ldapConnectionInfo);
-            throw new Exception("Cấu hình Ldap không hợp lệ");
+            throw new LdapConfigurationException("Cấu hình Ldap không hợp lệ");
         }
         try
         {
@@ -115,9 +126,8 @@ public sealed class AuthenticateLdapService(ILogger logger,
                     LocalCacheExpiration = TimeSpan.FromSeconds(30),
                 }; 
                 _ = hybridCache.SetAsync(UserNotFoundKey(username), true, cacheEntryOptions, cancellationToken: cancellationToken).AsTask();
-                var messenger = $"Người dùng không tồn tại [{username}]";
-                logger.Warning(messenger);
-                throw new Exception(messenger);
+                logger.Warning("Người dùng không tồn tại [{Username}]", username);
+                throw new UserNotFoundException(username);
             }
             // Thực hiện xác thực
             ldapContext.Connection.Bind(
@@ -129,11 +139,22 @@ public sealed class AuthenticateLdapService(ILogger logger,
         }
         catch (Exception ex)
         {
-            if (ex is not LdapException { ErrorCode: 49 })
+            if (ex is LdapApiException)
             {
-                logger.Error(ex, "Lỗi khi kết nối đến LDAP: {LdapInfo}", ldapContext.ToLogInfo());
+                throw; // Truyền tiếp các exception đã được xử lý
             }
-            throw;
+
+            if (ex is not LdapException ldapEx) throw new AuthenticationException("Lỗi xác thực người dùng LDAP", ex);
+            if (ldapEx.ErrorCode == 49)
+            {
+                // Mã lỗi 49 là lỗi xác thực (sai mật khẩu)
+                throw new InvalidCredentialsException(0, ldapEx);
+            }
+                
+            logger.Error(ex, "Lỗi khi kết nối đến LDAP: {LdapInfo}", ldapContext.ToLogInfo());
+            throw new LdapConfigurationException("Lỗi kết nối đến máy chủ LDAP", ex);
+
+            // Các lỗi khác
         }
     }
 }

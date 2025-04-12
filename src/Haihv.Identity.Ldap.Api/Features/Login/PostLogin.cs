@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Carter;
+using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Services;
 using MediatR;
@@ -10,18 +11,16 @@ namespace Haihv.Identity.Ldap.Api.Features.Login;
 
 public static class PostLogin
 {
-    public record Command(string Username, string Password, bool RememberMe) : IRequest<Response>;
-    
-    public record Response(string AccessToken, string? RefreshToken);
+    public record Command(string Username, string Password, bool RememberMe) : IRequest<string?>;
     
     public class Handler(IHttpContextAccessor httpContextAccessor, 
         ILogger logger,
         HybridCache hybridCache,
         ICheckIpService checkIpService,
         IAuthenticateLdapService authenticateLdapService, 
-        TokenProvider tokenProvider) : IRequestHandler<Command, Response>
+        TokenProvider tokenProvider) : IRequestHandler<Command, string?>
     {
-        public async Task<Response> Handle(Command request, CancellationToken cancellationToken)
+        public async Task<string?> Handle(Command request, CancellationToken cancellationToken)
         {
             var httpContext = httpContextAccessor.HttpContext 
                 ?? throw new InvalidOperationException("HttpContext không khả dụng");
@@ -31,14 +30,14 @@ public static class PostLogin
             if (exprSecond > 0)
             {
                 logger.Warning("{username} đã đăng nhập sai quá nhiều, Ip: {ip}", username, ipInfo.IpAddress);
-                throw new Exception($"Bạn đã đăng nhập sai quá nhiều, thử lại sau {exprSecond} giây!");
+                throw new IpLockedException(exprSecond);
             }
             var sw = Stopwatch.StartNew();
             const string errorMessage = "Thông tin đăng nhập không chính xác!";
             
             var userResult = await authenticateLdapService.Authenticate(username, request.Password, cancellationToken);
 
-            return userResult.Match<Response>(userLdap =>
+            return userResult.Match<string?>(userLdap =>
                 {
                     var samAccountName = userLdap.SamAccountName;
                     // Tạo token
@@ -51,6 +50,16 @@ public static class PostLogin
                     {
                         // Tạo refresh token
                         refreshToken = tokenProvider.GenerateRefreshToken(samAccountName);
+                        // Ghi cookie mới
+                        httpContext.Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions
+                        {
+                            HttpOnly = true,
+                            Secure = true,
+                            SameSite = SameSiteMode.None, // Thay đổi từ Strict sang None để hoạt động với CORS
+                            Path = "/api/",
+                            IsEssential = true,
+                            Expires = refreshToken.GetExpiryToken()
+                        });
                     }
                     
                     sw.Stop();
@@ -70,7 +79,7 @@ public static class PostLogin
                             ipInfo);
                     }
 
-                    return new Response(accessToken, refreshToken); 
+                    return accessToken; 
                 },
                 ex =>
                 {
@@ -82,11 +91,11 @@ public static class PostLogin
                         ipInfo);
                     if (ipInfo.IsPrivate)
                     {
-                        throw new Exception(errorMessage);
+                        throw new InvalidCredentialsException(0, ex);
                     }
 
                     checkIpService.SetLockAsync(ipInfo.IpAddress);
-                    throw new Exception($"{errorMessage} {(count < 3 ? $"Bạn còn {3 - count} lần thử" : "")}");
+                    throw new InvalidCredentialsException(3 - count, ex);
                 }
             );
         }
@@ -98,29 +107,11 @@ public static class PostLogin
         {
             app.MapPost("/api/login", async (HttpContext httpContext, ISender sender, Command command) =>
                 {
-                    try
-                    {
-                        var response = await sender.Send(command);
-                        if (!string.IsNullOrWhiteSpace(response.RefreshToken))
-                        {
-                            // Ghi cookie mới
-                            httpContext.Response.Cookies.Append("refreshToken", response.RefreshToken, new CookieOptions
-                            {
-                                HttpOnly = true,
-                                Secure = true,
-                                SameSite = SameSiteMode.None, // Thay đổi từ Strict sang None để hoạt động với CORS
-                                Path = "/api/",
-                                IsEssential = true,
-                                Expires = response.RefreshToken.GetExpiryToken()
-                            });
-                        }
-                        return Results.Ok(response.AccessToken);
-                    }
-                    catch (Exception e)
-                    {
-                        return Results.BadRequest(e.Message);
-                    }
-
+                    // Không cần try-catch ở đây vì đã có middleware xử lý exception toàn cục
+                    var response = await sender.Send(command);
+                    return string.IsNullOrWhiteSpace(response) ? 
+                        Results.Unauthorized() :
+                        Results.Ok(response);
                 })
                 .WithTags("Login");
         }

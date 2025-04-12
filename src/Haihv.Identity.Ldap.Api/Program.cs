@@ -101,6 +101,9 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+// Thêm middleware xử lý exception toàn cục
+app.UseGlobalExceptionHandler();
+
 app.UseHttpsRedirection();
 
 // Use Cors

@@ -1,4 +1,5 @@
 using Carter;
+using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Interfaces;
 using Haihv.Identity.Ldap.Api.Services;
@@ -28,7 +29,7 @@ public static class GetCheckLdapGroup
             var accessToken =  httpContext.Request.Headers.Authorization.ToString().Replace("Bearer ", "");
             // Kiểm tra AccessToken có hợp lệ hay không?
             if (!await tokenProvider.VerifyAccessToken(accessToken, cancellationToken))
-                return false;
+                throw new InvalidTokenException("Token không hợp lệ");
             var dn = httpContext.GetDistinguishedName();
             var userPrincipalName = httpContext.GetUserPrincipalName();
             var samAccountName = httpContext.GetSamAccountName();
@@ -36,7 +37,7 @@ public static class GetCheckLdapGroup
             if (string.IsNullOrWhiteSpace(dn))
             {
                 logger.Warning("Không tìm thấy thông tin người dùng! {ipAddr} {UserPrincipalName}", ipAddr, userPrincipalName);
-                throw new NullReferenceException("Không tìm thấy DN của người dùng!");
+                throw new UserNotFoundException(userPrincipalName ?? "unknown");
             }
             var key = CacheSettings.LdapGroupsKey(samAccountName);
             try
@@ -54,7 +55,14 @@ public static class GetCheckLdapGroup
             catch(Exception ex){
                 logger.Error(ex,"Lỗi khi kiểm tra nhóm LDAP {samAccountName} {groupName}", 
                     samAccountName,request.GroupName);
-                throw;
+                
+                // Chuyển đổi exception thành LdapApiException
+                if (ex is LdapApiException)
+                {
+                    throw; // Truyền tiếp các exception đã được xử lý
+                }
+                
+                throw new LdapConfigurationException($"Lỗi khi kiểm tra nhóm LDAP {request.GroupName} cho người dùng {samAccountName}", ex);
             }
         }
         public class Endpoint : ICarterModule
@@ -63,17 +71,9 @@ public static class GetCheckLdapGroup
             {
                 app.MapGet("/api/ldapGroup/check", async (ISender sender, string groupName, bool clearCache = false) =>
                     {
-                        try
-                        {
-                            var response = await sender.Send(new Query(groupName, clearCache));
-                            return response ? Results.Ok(true) : Results.NoContent();
-                        } 
-                        catch (Exception e)
-                        {
-                            return e is UnauthorizedAccessException ? 
-                                Results.Unauthorized() : 
-                                Results.Problem(detail:e.Message);
-                        }
+                        // Không cần try-catch ở đây vì đã có middleware xử lý exception toàn cục
+                        var response = await sender.Send(new Query(groupName, clearCache));
+                        return response ? Results.Ok(true) : Results.NoContent();
                     })
                     .WithTags("LdapGroups")
                     .RequireAuthorization();

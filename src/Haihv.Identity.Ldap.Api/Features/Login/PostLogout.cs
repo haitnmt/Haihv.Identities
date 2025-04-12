@@ -1,4 +1,5 @@
 using Carter;
+using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Extensions;
 using Haihv.Identity.Ldap.Api.Services;
 using MediatR;
@@ -60,15 +61,9 @@ public static class PostLogout
         {
             app.MapPost("/api/logout/", async (ISender sender, bool all = false) =>
                 {
-                    try
-                    {
-                        var response = await sender.Send(new Query(all));
-                        return response ? Results.Ok() : Results.Unauthorized();
-                    }
-                    catch (Exception e)
-                    {
-                        return Results.BadRequest(e.Message);
-                    }
+                    // Không cần try-catch ở đây vì đã có middleware xử lý exception toàn cục
+                    var response = await sender.Send(new Query(all));
+                    return response ? Results.Ok() : Results.Unauthorized();
                 })
                 .WithTags("Login");
         }

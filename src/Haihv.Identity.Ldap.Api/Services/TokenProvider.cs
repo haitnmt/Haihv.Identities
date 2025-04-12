@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Haihv.Identity.Ldap.Api.Entities;
+using Haihv.Identity.Ldap.Api.Exceptions;
 using Haihv.Identity.Ldap.Api.Options;
 using Haihv.Identity.Ldap.Api.Settings;
 using Microsoft.Extensions.Caching.Hybrid;
@@ -29,7 +30,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         string GetClaimValue(string claimType)
         {
             if (!jwt.TryGetClaim(claimType, out var claim))
-                throw new InvalidOperationException($"Invalid refresh token: {refreshToken}");
+                throw new InvalidTokenException($"Token không hợp lệ: thiếu claim {claimType}");
             return claim.Value;
         }
     }
@@ -47,7 +48,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         string GetClaimValue(string claimType)
         {
             if (!jwt.TryGetClaim(claimType, out var claim))
-                throw new InvalidOperationException($"Invalid refresh token: {token}");
+                throw new InvalidTokenException($"Token không hợp lệ: thiếu claim {claimType}");
             return claim.Value;
         }
     }

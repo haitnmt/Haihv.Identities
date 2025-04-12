@@ -27,15 +27,9 @@ public static class PostVerifyToken
         {
             app.MapPost("/api/verify", async (ISender sender) =>
                 {
-                    try
-                    {
-                        var response = await sender.Send(new Query());
-                        return response ? Results.Ok("Token hợp lệ!") : Results.Unauthorized();
-                    } 
-                    catch (Exception e)
-                    {
-                        return Results.BadRequest(e.Message);
-                    }
+                    // Không cần try-catch ở đây vì đã có middleware xử lý exception toàn cục
+                    var response = await sender.Send(new Query());
+                    return response ? Results.Ok("Token hợp lệ!") : Results.Unauthorized();
                 })
                 .WithTags("Login")
                 .RequireAuthorization();
