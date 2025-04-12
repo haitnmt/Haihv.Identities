@@ -21,21 +21,34 @@ jobs:
           csprojContent=$(cat src/Haihv.Identity.Ldap.Api/Haihv.Identity.Ldap.Api.csproj)
           version=$(echo "$csprojContent" | grep -oP '(?<=<AssemblyVersion>)(.*?)(?=</AssemblyVersion>)')
           echo "VERSION_TAG=$version" >> $GITHUB_ENV
-          echo "Phiên bản: $version"
+          echo "::notice::Phiên bản API: $version"
+          echo "Phiên bản API: $version"
         shell: bash
 
       - name: Set image name
         run: echo "IMAGE_NAME=haitnmt/ldap-api" >> $GITHUB_ENV
 
-      - name: Check if Docker tag exists
+     # Kiểm tra xem workflow được kích hoạt bởi push hay workflow_dispatch
+      - name: Check trigger type and Docker tag
         id: check_tag
         run: |
-          if [[ $(docker manifest inspect ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }} 2>/dev/null) ]]; then
-            echo "Tag already exists. Skipping build."
-            echo "BUILD=false" >> $GITHUB_ENV
-          else
-            echo "Tag does not exist. Proceeding with build."
+          # Nếu là workflow_dispatch (chạy thủ công), luôn build mới
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "::notice::Chạy thủ công - Luôn build và push image mới (ghi đè nếu đã tồn tại)"
+            echo "Chạy thủ công - Luôn build và push image mới (ghi đè nếu đã tồn tại)"
             echo "BUILD=true" >> $GITHUB_ENV
+          # Nếu là push, kiểm tra tag đã tồn tại chưa
+          else
+            echo "Kích hoạt bởi push - Kiểm tra tag đã tồn tại chưa"
+             if [[ $(docker manifest inspect ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }} 2>/dev/null) ]]; then
+              echo "::warning::Tag ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }} đã tồn tại. Bỏ qua build."
+              echo "Tag đã tồn tại. Bỏ qua build."
+              echo "BUILD=false" >> $GITHUB_ENV
+            else
+              echo "::notice::Tag ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }} chưa tồn tại. Tiến hành build."
+              echo "Tag chưa tồn tại. Tiến hành build."
+              echo "BUILD=true" >> $GITHUB_ENV
+            fi
           fi
 
       - name: Set up .NET SDK
@@ -81,3 +94,12 @@ jobs:
       - name: Logout of Docker Hub
         if: env.BUILD == 'true'
         run: docker logout
+        
+      # Thông báo kết quả build
+      - name: Build Result Summary
+        if: env.BUILD == 'true'
+        run: |
+          echo "::notice::✅ Đã hoàn thành build và push image đa nền tảng (multi-platform)"
+          echo "::notice::📦 Image: ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }}"
+          echo "::notice::📦 Image: ${{ env.IMAGE_NAME }}:latest"
+          echo "::notice::🖥️ Nền tảng: linux/amd64, linux/arm64"
