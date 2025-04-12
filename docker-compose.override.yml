@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  identity-ldap-api:
+    image: haitnmt/ldap-api:latest
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DOTNET_SYSTEM_NET_HTTP_SOCKETSHTTPHANDLER_HTTPCLIENTHANDLER_DANGEROUSACCEPTANYSERVERCERTIFICATEVALIDATOR=true
+      - ASPNETCORE_HTTPS_PORT=8080
+      - ASPNETCORE_URLS=https://+:443
+      # Ghi đè cấu hình Redis để kết nối đến Valkey trong Docker
+      - Redis__ConnectionString=valkey:6379
+      - Redis__InstanceName=Api-Ldap
+      - BackendUrl=https://localhost:8080
+    volumes:
+      - ./certs:/https:ro
