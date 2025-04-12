@@ -48,7 +48,7 @@ public static class PostLogout
                 HttpOnly = true,
                 Secure = true,
                 SameSite = SameSiteMode.None, // Phải giống với khi tạo cookie
-                Path = "/api/", // Phải giống với khi tạo cookie
+                Path = "/", // Phải giống với khi tạo cookie
                 IsEssential = true
             });
             return true;

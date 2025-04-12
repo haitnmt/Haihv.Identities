@@ -52,7 +52,7 @@ public static class PostLogin
                             HttpOnly = true,
                             Secure = true,
                             SameSite = SameSiteMode.None, // Thay đổi từ Strict sang None để hoạt động với CORS
-                            Path = "/api/",
+                            Path = "/",
                             IsEssential = true,
                             Expires = refreshToken.GetExpiryToken()
                         });
