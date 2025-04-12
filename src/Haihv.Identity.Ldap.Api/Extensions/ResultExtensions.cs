@@ -44,7 +44,7 @@ public static class ResultExtensions
     /// <typeparam name="T">Kiểu dữ liệu của kết quả.</typeparam>
     /// <param name="result">Kết quả cần chuyển đổi.</param>
     /// <returns>Giá trị của kết quả nếu thành công, ngược lại là null.</returns>
-    public static T? ValueOrNull<T>(this Result<T> result) where T : class
+    public static T? ValueOrNull<T>(this Result<T?> result) where T : class
     {
         return result.Match(
             value => value,

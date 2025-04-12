@@ -34,13 +34,13 @@ public static class PostRefreshToken
                 throw new IpLockedException(exprSecond);
             }
             // Lấy refresh token từ cookie
-            var refreshToken = httpContext.Request.Cookies["refreshToken"];
-            if (string.IsNullOrEmpty(refreshToken))
+            var refreshTokenCookies = httpContext.Request.Cookies["refreshToken"];
+            if (string.IsNullOrEmpty(refreshTokenCookies))
             {
                 logger.Error("Không tìm thấy refresh token trong cookie của client: {ClientIp}", ipInfo.IpAddress);
                 throw new InvalidTokenException("Refresh token không tồn tại");
             }
-            (refreshToken, var samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshToken);
+            var (refreshToken,samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshTokenCookies);
             if (string.IsNullOrWhiteSpace(refreshToken) || string.IsNullOrWhiteSpace(samAccountName))
             {
                 logger.Error("Thông tin không hợp lệ: {ClientIp}", ipInfo.IpAddress);
