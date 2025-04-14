@@ -18,10 +18,11 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
 
     private static (string Jti, string SamAccountName, string Secret, bool IsExpired) DecodeRefreshToken(string refreshToken)
     {
-
         var handler = new JsonWebTokenHandler();
         var jwt = handler.ReadJsonWebToken(refreshToken);
 
+        if (jwt is null) return ("", "", "", true);
+        
         var jti = GetClaimValue(JwtRegisteredClaimNames.Jti);
         var samAccountName = GetClaimValue(nameof(UserLdap.SamAccountName));
         var secret = GetClaimValue("Secret");

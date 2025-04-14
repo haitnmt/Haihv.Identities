@@ -6,11 +6,11 @@
         <ImplicitUsings>enable</ImplicitUsings>
 		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 		<Copyright>vpdkbacninh.vn | haihv.vn</Copyright>
-        <AssemblyVersion>2025.04.14.1</AssemblyVersion>
-        <FileVersion>2025.04.14.1</FileVersion>
+        <AssemblyVersion>2025.04.14.2</AssemblyVersion>
+        <FileVersion>2025.04.14.2</FileVersion>
         <NeutralLanguage>vi-VN</NeutralLanguage>
     </PropertyGroup>
-
+ 
     <ItemGroup>
         <PackageReference Include="Carter" Version="9.0.0" />
         <PackageReference Include="Elastic.Serilog.Sinks" Version="8.12.3" />

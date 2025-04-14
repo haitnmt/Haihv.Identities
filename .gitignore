@@ -83,3 +83,10 @@
 
 #Config
 /src/**/config/data.ini
+
+#ssl
+/certs/
+/certs/*
+certs/
+*.pfx
+*.cer
