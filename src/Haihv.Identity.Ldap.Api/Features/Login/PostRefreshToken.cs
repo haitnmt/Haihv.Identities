@@ -35,16 +35,16 @@ public static class PostRefreshToken
             }
             // Lấy refresh token từ cookie
             var refreshTokenCookies = httpContext.Request.Cookies["refreshToken"];
-            if (string.IsNullOrEmpty(refreshTokenCookies))
+            if (string.IsNullOrWhiteSpace(refreshTokenCookies))
             {
                 logger.Error("Không tìm thấy refresh token trong cookie của client: {ClientIp}", ipInfo.IpAddress);
                 throw new InvalidTokenException("Refresh token không tồn tại");
             }
-            var (refreshToken,samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshTokenCookies);
+            var (isExpired, refreshToken,samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshTokenCookies);
             if (string.IsNullOrWhiteSpace(refreshToken) || string.IsNullOrWhiteSpace(samAccountName))
             {
                 logger.Error("Thông tin không hợp lệ: {ClientIp}", ipInfo.IpAddress);
-                if (ipInfo.IsPrivate)
+                if (ipInfo.IsPrivate || isExpired)
                 {
                     throw new InvalidTokenException("Token không hợp lệ");
                 }

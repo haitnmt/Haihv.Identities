@@ -16,8 +16,9 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
 {
     private readonly JwtTokenOptions _options = options.Value;
 
-    private static (string Jti, string SamAccountName, string Secret, DateTimeOffset Expiry) DecodeRefreshToken(string refreshToken)
+    private static (string Jti, string SamAccountName, string Secret, bool IsExpired) DecodeRefreshToken(string refreshToken)
     {
+
         var handler = new JsonWebTokenHandler();
         var jwt = handler.ReadJsonWebToken(refreshToken);
 
@@ -25,7 +26,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         var samAccountName = GetClaimValue(nameof(UserLdap.SamAccountName));
         var secret = GetClaimValue("Secret");
 
-        return (jti, samAccountName, secret, jwt.ValidTo);
+        return (jti, samAccountName, secret, jwt.ValidTo <= DateTime.UtcNow);
 
         string GetClaimValue(string claimType)
         {
@@ -35,7 +36,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         }
     }
     
-    private static (string Jti, string SamAccountName, DateTimeOffset Expiry) DecodeToken(string token)
+    private static (string Jti, string SamAccountName, bool IsExpired) DecodeToken(string token)
     {
         var handler = new JsonWebTokenHandler();
         var jwt = handler.ReadJsonWebToken(token);
@@ -43,7 +44,7 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         var jti = GetClaimValue(JwtRegisteredClaimNames.Jti);
         var samAccountName = GetClaimValue(nameof(UserLdap.SamAccountName));
 
-        return (jti, samAccountName, jwt.ValidTo);
+        return (jti, samAccountName, jwt.ValidTo <= DateTime.UtcNow);
 
         string GetClaimValue(string claimType)
         {
@@ -129,13 +130,13 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         await hybridCache.RemoveByTagAsync(jti, cancellationToken);
     } 
     
-    public async Task<(string? RefreshToken, string? SamAccountName)> VerifyRefreshTokenAsync(string refreshToken)
+    public async Task<(bool IsExpired, string? RefreshToken, string? SamAccountName)> VerifyRefreshTokenAsync(string refreshToken)
     {
         // Giải nén thông tin từ refresh token
-        var (jti, samAccountName, secret, expiry) = DecodeRefreshToken(refreshToken);
+        var (jti, samAccountName, secret, isExpired) = DecodeRefreshToken(refreshToken);
         
         // Kiểm tra xem refresh token có còn hiệu lực hay không
-        if (expiry < DateTime.UtcNow) return (null, samAccountName);
+        if (isExpired) return (true, null, samAccountName);
         
         // Kiểm tra xem refresh token có còn tồn tại trong hybrid cache không
         var key = CacheSettings.RefreshTokenKey(samAccountName, jti);
@@ -144,16 +145,16 @@ public sealed class TokenProvider(HybridCache hybridCache, IOptions<JwtTokenOpti
         
         // Kiểm tra xem refresh token có còn hợp lệ hay không
         var result = cachedSecret != null && cachedSecret == secret;
-        if (!result) return (null, samAccountName);
+        if (!result) return (isExpired, null, samAccountName);
         _ = RemoveTokenByJtiAsync(jti);  // Xóa refresh token cũ
-        return (await GenerateRefreshToken(samAccountName), samAccountName);
+        return (isExpired, await GenerateRefreshToken(samAccountName), samAccountName);
     }
     
     public async Task<bool> VerifyAccessToken(string? accessToken, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(accessToken)) return false;
-        var (jti, samAccountName, expiry) = DecodeToken(accessToken);
-        if (expiry < DateTime.UtcNow) return false;
+        var (jti, samAccountName, isExpired) = DecodeToken(accessToken);
+        if (isExpired) return false;
 
         // Kiểm tra xem token có tồn tại trong hybrid cache không
         var key = CacheSettings.AccessTokenKey(samAccountName,jti);
