@@ -1,4 +1,3 @@
-
 using Microsoft.Extensions.Caching.Hybrid;
 
 namespace Haihv.Identity.Ldap.Api.Services;
@@ -19,7 +18,7 @@ public interface ICheckIpService
     /// <param name="ip">
     /// Địa chỉ IP cần đặt khóa.
     /// </param>
-    Task SetLockAsync(string ip);
+    Task SetLockAsync(string ip, int maxCount = 3, int maxCount1Day = 10);
 
     /// <summary>
     /// Xóa khóa của IP.
@@ -28,13 +27,14 @@ public interface ICheckIpService
     /// Địa chỉ IP cần xóa khóa.
     /// </param>
     Task ClearLockAsync(string ip);
+
+
 }
 
-public sealed class CheckIpService(HybridCache hybridCache) : ICheckIpService
+public sealed class CheckIpService(HybridCache hybridCache, int secondStep = 300) : ICheckIpService
 {
     private const string Key = "CheckIp";
-    private const int SecondStep = 300;
-    private const int MaxCount = 2;
+    private readonly int SecondStep = secondStep;
     private static string LockKey(string ip) => $"{Key}:Lock:{ip}";
 
     /// <summary>
@@ -46,11 +46,11 @@ public sealed class CheckIpService(HybridCache hybridCache) : ICheckIpService
     /// </returns>
     public async Task<(int Count, long ExprSecond)> CheckLockAsync(string ip)
     {
-        var lockInfo = await hybridCache.GetOrCreateAsync(LockKey(ip), 
+        var lockInfo = await hybridCache.GetOrCreateAsync(LockKey(ip),
             _ => ValueTask.FromResult<LockInfo?>(null));
-        return lockInfo is null ? (0,0L) :
+        return lockInfo is null ? (0, 0L) :
             // Tính thời gian lock còn lại theo giây (làm tròn kiểu long)
-            (lockInfo.Count, (long) Math.Ceiling((lockInfo.ExprTime - DateTime.Now).TotalSeconds));
+            (lockInfo.Count, (long)Math.Ceiling((lockInfo.ExprTime - DateTime.Now).TotalSeconds));
     }
 
     /// <summary>
@@ -59,9 +59,19 @@ public sealed class CheckIpService(HybridCache hybridCache) : ICheckIpService
     /// <param name="ip">
     /// Địa chỉ IP cần đặt khóa.
     /// </param>
-    public async Task SetLockAsync(string ip)
+    /// <param name="maxCount">
+    /// Số lần thử đăng nhập tối đa trước khi bị khóa.
+    /// </param>
+    /// <param name="maxCount1Day">
+    /// Số lần thử đăng nhập tối đa trong 1 ngày trước khi bị khóa.
+    /// </param>
+    /// <remarks>
+    /// Nếu không truyền giá trị cho <paramref name="maxCount"/> và <paramref name="maxCount1Day"/>,
+    /// thì sẽ sử dụng giá trị mặc định là 3 và 10.
+    /// </remarks>
+    public async Task SetLockAsync(string ip, int maxCount = 3, int maxCount1Day = 10)
     {
-        var lockInfo = await hybridCache.GetOrCreateAsync(LockKey(ip), 
+        var lockInfo = await hybridCache.GetOrCreateAsync(LockKey(ip),
             _ => ValueTask.FromResult<LockInfo?>(null));
         double expSecond = 0;
         const int totalSecond1Day = 86400;
@@ -74,22 +84,22 @@ public sealed class CheckIpService(HybridCache hybridCache) : ICheckIpService
         }
         else if (lockInfo.ExprTime >= DateTime.Now.AddDays(1))
         {
-            lockInfo.Count = 10;
+            lockInfo.Count = maxCount1Day;
             expSecond = totalSecond1Day;
         }
         else
         {
             lockInfo.Count++;
-            if (lockInfo.Count > MaxCount)
+            if (lockInfo.Count > maxCount)
             {
-                expSecond = Math.Pow(2, lockInfo.Count - MaxCount) * SecondStep;
+                expSecond = Math.Pow(2, lockInfo.Count - maxCount) * SecondStep;
                 expSecond = expSecond > totalSecond1Day ? totalSecond1Day : expSecond;
             }
         }
         lockInfo.ExprTime = DateTime.Now.AddSeconds(expSecond);
         await hybridCache.SetAsync(LockKey(ip), lockInfo);
     }
-    
+
     /// <summary>
     /// Xóa khóa của IP.
     /// </summary>
@@ -100,13 +110,13 @@ public sealed class CheckIpService(HybridCache hybridCache) : ICheckIpService
     {
         await hybridCache.RemoveAsync(LockKey(ip));
     }
-    
+
     private sealed class LockInfo(int count, DateTime exprTime)
     {
         public int Count { get; set; } = count;
         public DateTime ExprTime { get; set; } = exprTime;
 
         public LockInfo() : this(0, DateTime.MinValue)
-        {}
+        { }
     }
 }

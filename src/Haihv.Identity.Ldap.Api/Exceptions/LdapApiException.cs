@@ -11,7 +11,7 @@ public abstract class LdapApiException : Exception
     /// Mã HTTP trả về cho client.
     /// </summary>
     public HttpStatusCode StatusCode { get; }
-    
+
     /// <summary>
     /// Mã lỗi nội bộ.
     /// </summary>
@@ -24,7 +24,7 @@ public abstract class LdapApiException : Exception
     /// <param name="statusCode">Mã HTTP trả về cho client.</param>
     /// <param name="errorCode">Mã lỗi nội bộ.</param>
     /// <param name="innerException">Exception gốc (nếu có).</param>
-    protected LdapApiException(string message, HttpStatusCode statusCode, string errorCode, Exception? innerException = null) 
+    protected LdapApiException(string message, HttpStatusCode statusCode, string errorCode, Exception? innerException = null)
         : base(message, innerException)
     {
         StatusCode = statusCode;
@@ -42,7 +42,7 @@ public class AuthenticationException : LdapApiException
     /// </summary>
     /// <param name="message">Thông báo lỗi.</param>
     /// <param name="innerException">Exception gốc (nếu có).</param>
-    public AuthenticationException(string message, Exception? innerException = null) 
+    public AuthenticationException(string message, Exception? innerException = null)
         : base(message, HttpStatusCode.Unauthorized, "AUTH_FAILED", innerException)
     {
     }
@@ -58,7 +58,7 @@ public class UserNotFoundException : LdapApiException
     /// </summary>
     /// <param name="username">Tên người dùng không tìm thấy.</param>
     /// <param name="innerException">Exception gốc (nếu có).</param>
-    public UserNotFoundException(string username, Exception? innerException = null) 
+    public UserNotFoundException(string username, Exception? innerException = null)
         : base($"Người dùng không tồn tại [{username}]", HttpStatusCode.NotFound, "USER_NOT_FOUND", innerException)
     {
     }
@@ -74,7 +74,7 @@ public class LdapConfigurationException : LdapApiException
     /// </summary>
     /// <param name="message">Thông báo lỗi.</param>
     /// <param name="innerException">Exception gốc (nếu có).</param>
-    public LdapConfigurationException(string message, Exception? innerException = null) 
+    public LdapConfigurationException(string message, Exception? innerException = null)
         : base(message, HttpStatusCode.InternalServerError, "LDAP_CONFIG_ERROR", innerException)
     {
     }
@@ -89,14 +89,14 @@ public class IpLockedException : LdapApiException
     /// Thời gian còn lại (giây) trước khi IP được mở khóa.
     /// </summary>
     public long RemainingSeconds { get; }
-    
+
     /// <summary>
     /// Khởi tạo một instance mới của <see cref="IpLockedException"/>.
     /// </summary>
     /// <param name="remainingSeconds">Thời gian còn lại (giây) trước khi IP được mở khóa.</param>
     /// <param name="innerException">Exception gốc (nếu có).</param>
-    public IpLockedException(long remainingSeconds, Exception? innerException = null) 
-        : base($"Bạn đã đăng nhập sai quá nhiều, thử lại sau {remainingSeconds} giây!", 
+    public IpLockedException(long remainingSeconds, Exception? innerException = null)
+        : base($"Bạn đã đăng nhập sai quá nhiều, thử lại sau {remainingSeconds} giây!",
             HttpStatusCode.TooManyRequests, "IP_LOCKED", innerException)
     {
         RemainingSeconds = remainingSeconds;
@@ -113,7 +113,7 @@ public class InvalidTokenException : LdapApiException
     /// </summary>
     /// <param name="message">Thông báo lỗi.</param>
     /// <param name="innerException">Exception gốc (nếu có).</param>
-    public InvalidTokenException(string message, Exception? innerException = null) 
+    public InvalidTokenException(string message, Exception? innerException = null)
         : base(message, HttpStatusCode.Unauthorized, "INVALID_TOKEN", innerException)
     {
     }
@@ -128,14 +128,14 @@ public class InvalidCredentialsException : LdapApiException
     /// Số lần thử còn lại trước khi IP bị khóa.
     /// </summary>
     public int RemainingAttempts { get; }
-    
+
     /// <summary>
     /// Khởi tạo một instance mới của <see cref="InvalidCredentialsException"/>.
     /// </summary>
     /// <param name="remainingAttempts">Số lần thử còn lại trước khi IP bị khóa.</param>
     /// <param name="innerException">Exception gốc (nếu có).</param>
-    public InvalidCredentialsException(int remainingAttempts, Exception? innerException = null) 
-        : base($"Thông tin đăng nhập không chính xác! {(remainingAttempts > 0 ? $"Bạn còn {remainingAttempts} lần thử" : "")}", 
+    public InvalidCredentialsException(int remainingAttempts, Exception? innerException = null)
+        : base($"Thông tin đăng nhập không chính xác! {(remainingAttempts > 0 ? $"Bạn còn {remainingAttempts} lần thử" : "")}",
             HttpStatusCode.Unauthorized, "INVALID_CREDENTIALS", innerException)
     {
         RemainingAttempts = remainingAttempts;

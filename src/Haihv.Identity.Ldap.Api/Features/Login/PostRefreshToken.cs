@@ -12,7 +12,7 @@ namespace Haihv.Identity.Ldap.Api.Features.Login;
 
 public static class PostRefreshToken
 {
-    public record Query: IRequest<string?>;
+    public record Query : IRequest<string?>;
 
     public class Handler(
         IHttpContextAccessor httpContextAccessor,
@@ -22,9 +22,11 @@ public static class PostRefreshToken
         IUserLdapService userLdapService,
         TokenProvider tokenProvider) : IRequestHandler<Query, string?>
     {
+        private const int MaxCount = 10;
+        private const int MaxCount1Day = 30;
         public async Task<string?> Handle(Query request, CancellationToken cancellationToken)
         {
-            var httpContext = httpContextAccessor.HttpContext 
+            var httpContext = httpContextAccessor.HttpContext
                               ?? throw new InvalidOperationException("HttpContext không khả dụng");
             var ipInfo = httpContext.GetIpInfo();
             var (count, exprSecond) = ipInfo.IsPrivate ? (0, 0) : await checkIpService.CheckLockAsync(ipInfo.IpAddress);
@@ -40,7 +42,7 @@ public static class PostRefreshToken
                 logger.Error("Không tìm thấy refresh token trong cookie của client: {ClientIp}", ipInfo.IpAddress);
                 throw new InvalidTokenException("Refresh token không tồn tại");
             }
-            var (isExpired, refreshToken,samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshTokenCookies);
+            var (isExpired, refreshToken, samAccountName) = await tokenProvider.VerifyRefreshTokenAsync(refreshTokenCookies);
             if (string.IsNullOrWhiteSpace(refreshToken) || string.IsNullOrWhiteSpace(samAccountName))
             {
                 logger.Error("Thông tin không hợp lệ: {ClientIp}", ipInfo.IpAddress);
@@ -48,8 +50,8 @@ public static class PostRefreshToken
                 {
                     throw new InvalidTokenException("Token không hợp lệ");
                 }
-                _ = checkIpService.SetLockAsync(ipInfo.IpAddress);
-                throw new InvalidCredentialsException(3 - count);
+                _ = checkIpService.SetLockAsync(ipInfo.IpAddress, MaxCount, MaxCount1Day);
+                throw new InvalidCredentialsException(MaxCount - count);
             }
 
             var cacheKey = CacheSettings.LdapUserKey(samAccountName);
@@ -57,9 +59,9 @@ public static class PostRefreshToken
             {
                 Expiration = CacheSettings.UserLdapExpiration,
                 LocalCacheExpiration = TimeSpan.FromMinutes(5),
-            }; 
+            };
             List<string> tags = [samAccountName];
-            var userLdap = await hybridCache.GetOrCreateAsync(cacheKey, 
+            var userLdap = await hybridCache.GetOrCreateAsync(cacheKey,
                 async _ =>
                 {
                     var userLdap = await userLdapService.GetBySamAccountNameAsync(samAccountName);
@@ -74,8 +76,9 @@ public static class PostRefreshToken
                 {
                     throw new UserNotFoundException(samAccountName);
                 }
-                _ = checkIpService.SetLockAsync(ipInfo.IpAddress);
-                throw new InvalidCredentialsException(3 - count);
+                _ = checkIpService.SetLockAsync(ipInfo.IpAddress, MaxCount, MaxCount1Day);
+                // Nếu không tìm thấy người dùng, tăng số lần thử và ném ngoại lệ
+                throw new InvalidCredentialsException(MaxCount - count);
             }
             var accessToken = tokenProvider.GenerateAccessToken(userLdap);
             // Xóa cookie cũ
@@ -101,8 +104,8 @@ public static class PostRefreshToken
             {
                 // Không cần try-catch ở đây vì đã có middleware xử lý exception toàn cục
                 var response = await sender.Send(new Query());
-                return string.IsNullOrWhiteSpace(response) ? 
-                    Results.NotFound() : 
+                return string.IsNullOrWhiteSpace(response) ?
+                    Results.NotFound() :
                     Results.Ok(response);
             }).WithTags("Login");
         }
